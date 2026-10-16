@@ -98,7 +98,7 @@ Interface/
 
 Open settings by clicking the **cog in the upper-right corner** of the Obsidian Bags inventory window, or use either slash command:
 
-- `/obbags`
+- `/obags`
 - `/obsidianbags`
 
 From the settings interface, customize your layout, categories, themes, and sorting preferences.
