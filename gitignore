@@ -1,0 +1,24 @@
+# Obsidian Arcanum - Obsidian Bags
+# Keep addon source files, .toc manifests, Media/, images/, and documentation tracked.
+
+# Locally packaged test and release archives
+*.zip
+
+# Temporary and backup files
+*.bak
+*.tmp
+*~
+*.log
+
+# Local build output (if generated later)
+/build/
+/dist/
+
+# Editor-specific local settings
+.vscode/
+.idea/
+
+# Operating-system metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
