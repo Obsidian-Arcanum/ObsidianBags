@@ -1,0 +1,56 @@
+## Interface: 16001
+## Title: Obsidian Bags
+## Notes: Obsidian Arcanum inventory organizer. Standard and multi-column category views, One Stack, bank and SELL tools.
+## Author: Obsidian Arcanum
+## Version: 0.0.125
+## Dependencies: Syndicator
+## SavedVariables: VirtualBagsLabProfiles, VirtualBagsLabViewCache
+## SavedVariablesPerCharacter: VirtualBagsLabDB
+
+Profiles.lua
+PanelPreferences.lua
+CharacterBrowser.lua
+SortPolicy.lua
+SearchPolicy.lua
+SharedSearch.lua
+PhysicalPlan.lua
+PhysicalMove.lua
+StackConsolidation.lua
+StackForecast.lua
+PhysicalBatch.lua
+IncomingPlacement.lua
+SyncAudit.lua
+JunkAudit.lua
+VendorAudit.lua
+CommandHelp.lua
+BankBridge.lua
+WindowBridge.lua
+NativeFrames.lua
+BankModel.lua
+CrossTransfer.lua
+StackWork.lua
+AmmoTransfer.lua
+ReagentTransfer.lua
+SlotArt.lua
+SectionLayout.lua
+BagGeometry.lua
+OneStack.lua
+StackPopover.lua
+CollapseView.lua
+SectionPresentation.lua
+CategoryRegistry.lua
+CategoryClassifier.lua
+CategorySharing.lua
+CategoryView.lua
+FrameSlices.lua
+CombatPreview.lua
+SortProjection.lua
+BankTabs.lua
+BankCachedViewer.lua
+BankSkin.lua
+BankPanel.lua
+KeyringPanel.lua
+BagUnequip.lua
+CategoryManager.lua
+FancySkin.lua
+Core.lua

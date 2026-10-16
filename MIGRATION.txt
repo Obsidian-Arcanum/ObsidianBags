@@ -1,0 +1,28 @@
+OBSIDIAN BAGS | v0.0.125 RENAME / SAVEDVARIABLES MIGRATION
+
+Changing an addon directory/TOC from VirtualBagsLab to ObsidianBags also
+changes the filenames World of Warcraft loads from WTF SavedVariables.
+Without migrating them, your virtual layout, SELL marks, options and custom
+categories can appear to reset. Nothing in the physical inventory is changed.
+
+BEFORE LAUNCHING THE GAME:
+  1. Fully EXIT WoW, including the character selection screen.
+  2. Back up the entire WTF folder and the prior Interface/AddOns/VirtualBagsLab.
+  3. Install Interface/AddOns/ObsidianBags from this ZIP.
+  4. Remove or disable Interface/AddOns/VirtualBagsLab. Never run both.
+  5. For every OLD SavedVariables file named VirtualBagsLab.lua under WTF,
+     including per-character SavedVariables folders:
+        COPY  VirtualBagsLab.lua  ->  ObsidianBags.lua
+     in the SAME folder. Rename/copy .lua.bak files optionally as backup.
+     The original files can stay as backups; do not overwrite a new/edited
+     ObsidianBags.lua without first making a backup.
+  6. Start WoW and confirm Standard layout, SELL marks, category custom rules,
+     settings profiles, import/export, and bank view before deleting backups.
+
+Windows users can use the included optional MigrateSavedVariables.ps1 script
+from PowerShell after closing WoW; it only copies missing target files and
+never removes or overwrites your existing source data.
+
+Internal global SavedVariables names remain VirtualBagsLabDB,
+VirtualBagsLabProfiles and VirtualBagsLabViewCache for compatibility. This is
+intentional; users will see Obsidian Bags as the addon name.
