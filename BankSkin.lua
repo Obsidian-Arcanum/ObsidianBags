@@ -117,7 +117,7 @@ function B.ApplySlot(button)
   local color=(ns.PanelPreferences and ns.PanelPreferences.Get(db,"bank","countFontColor")) or db.countFontColor or {1,1,1}
   button.count:SetTextColor(color[1] or 1,color[2] or 1,color[3] or 1)
   button.count:SetShadowColor(0,0,0,1);button.count:SetShadowOffset(1,-1)
-  if button.location then button.location:SetShown(DB().uiSkin=="diagnostic") end
+  if button.location then button.location:Hide() end
   if not button.corner then
     local dot=button:CreateTexture(nil,"OVERLAY",nil,6)
     dot:SetSize(5,5);dot:SetPoint("TOPRIGHT",button,"TOPRIGHT",-3,-3)
@@ -143,8 +143,13 @@ function B.Initialize(args)
   veil=panel:CreateTexture(nil,"BACKGROUND",nil,-2)
   veil:SetPoint("TOPLEFT",panel,"TOPLEFT",4,-4)
   veil:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-4,4)
-  frame=panel:CreateTexture(nil,"BORDER",nil,4)
-  frame:SetTexture(ART.."Frame.tga");frame:SetAllPoints(panel)
+  if ns.FrameSlices and ns.FrameSlices.Create then
+    -- The same fixed 80px corner crops used by Fancy's carried bag.
+    frame=ns.FrameSlices.Create(panel,ART.."Frame.tga")
+  else
+    frame=panel:CreateTexture(nil,"BORDER",nil,4)
+    frame:SetTexture(ART.."Frame.tga");frame:SetAllPoints(panel)
+  end
   emblem=child:CreateTexture(nil,"BACKGROUND",nil,-7)
   emblem:SetTexture(ART.."Emblem.tga")
   emblem:SetSize(305,305);emblem:SetPoint("TOPLEFT",child,"TOPLEFT",82,-5)

@@ -129,7 +129,7 @@ function V.ObserveLive(db,visual,entries,mainCap,ammoCap,reagentCap,ammoBagIDs,a
   end
   state.layout=layout
   state.main,state.ammo,state.reagent=mainCap,ammoCap,reagentCap
-  state.columns=ns.BagGeometry and ns.BagGeometry.Columns() or db.mainColumns or 12
+  state.columns=ns.BagGeometry and ns.BagGeometry.Columns() or db.mainColumns or 10
   state.iconSize,state.gridSpacing=db.iconSize or 35,db.gridSpacing or 4
   state.separateUtilityBag=db.separateUtilityBag~=false
   state.separateReagentBag=db.separateReagentBag~=false
@@ -401,7 +401,7 @@ function V.Draw()
   local size=math.max(30,math.min(42,tonumber(state.iconSize) or tonumber(db.iconSize) or 35))
   local gap=math.max(2,math.min(10,tonumber(state.gridSpacing) or tonumber(db.gridSpacing) or 4))
   local cell=size+gap
-  local columns=ns.BagGeometry.Constrain(tonumber(state.columns) or tonumber(db.mainColumns) or 12,main)
+  local columns=ns.BagGeometry.Constrain(tonumber(state.columns) or tonumber(db.mainColumns) or 10,main)
   local viewMain,viewAmmo,viewReagent,sectionHeight,presentation
   local separation={separateUtilityBag=state.separateUtilityBag,
     separateReagentBag=state.separateReagentBag}

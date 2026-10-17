@@ -2,7 +2,7 @@
 ## Title: Obsidian Bags
 ## Notes: Obsidian Arcanum inventory organizer. Standard and multi-column category views, One Stack, bank and SELL tools.
 ## Author: Obsidian Arcanum
-## Version: 0.0.125
+## Version: 0.0.133
 ## Dependencies: Syndicator
 ## SavedVariables: VirtualBagsLabProfiles, VirtualBagsLabViewCache
 ## SavedVariablesPerCharacter: VirtualBagsLabDB
@@ -36,14 +36,21 @@ SectionLayout.lua
 BagGeometry.lua
 OneStack.lua
 StackPopover.lua
+CombatStackPopover.lua
+CombatAvailableSlots.lua
 CollapseView.lua
 SectionPresentation.lua
 CategoryRegistry.lua
 CategoryClassifier.lua
 CategorySharing.lua
 CategoryView.lua
+BankCategoryView.lua
+BankStackPopover.lua
 FrameSlices.lua
 CombatPreview.lua
+CombatNative.lua
+CombatExpanded.lua
+CombatBagBinding.lua
 SortProjection.lua
 BankTabs.lua
 BankCachedViewer.lua

@@ -1,17 +1,21 @@
--- v0.0.124a. A temporary, physical-backed inspector for One Stack groups.
--- No logical reordering, physical transfer or synthetic cursor manipulation.
+-- v0.0.129d. Physical-backed One Stack inspector with guarded exact-target
+-- native cursor return + pre-existing StackWork merge (out of combat only).
 -- Native ContainerFrameItemButtonTemplate OnClick/OnDragStart stay untouched.
 local _, ns = ...
 ns.StackPopover = {}
 local P = ns.StackPopover
-local frame, scroller, contents, title, subtitle, closeButton
+local frame, scroller, contents, title, subtitle, closeButton, secureCloseButton
 local selectedID, isOpen = nil, false
 local bagParents, physicalButtons = {}, {}
-local pendingRefresh, pendingClose = false, false
+local pendingRefresh, pendingClose, pendingChildHide = false, false, false
 local selectedOwner
 local lastShift, lastAlt = false, false
 local wasMouseDown = false
 local dismissAfterCursor = false
+-- Only an observed click/drag on an existing native physical popup source may
+-- authorize ClearCursor, and only after verifying its held item provenance.
+local nativeSource, pendingSource, mergeSettling = nil,nil,nil
+local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
 local CELL, COLUMNS, MAX_ROWS = 41, 5, 4
 local WIDTH = COLUMNS*CELL+20
 local function Combat()
@@ -22,6 +26,125 @@ local function EmptyCursor()
   local ok,kind=pcall(GetCursorInfo)
   return ok and not (issecretvalue and issecretvalue(kind)) and kind==nil
 end
+local function SamePhysical(a,b)
+  return a and b and a.itemID==b.itemID and a.link==b.link and
+    a.bagID==b.bagID and a.slotID==b.slotID and a.count==b.count
+end
+local function HeldMatches(entry)
+  if not GetCursorInfo or not entry then return false end
+  local ok,kind,id,link=pcall(GetCursorInfo)
+  if not ok or (issecretvalue and (issecretvalue(kind) or
+      issecretvalue(id) or issecretvalue(link))) then return false end
+  return kind=="item" and id==entry.itemID and
+    (type(link)~="string" or link==entry.link)
+end
+local function CurrentPhysical(bag,slot)
+  if not ns.MainPanel or not ns.MainPanel.StackPopoverSnapshot then return nil end
+  local _,entries,records=ns.MainPanel.StackPopoverSnapshot()
+  for token,entry in pairs(entries or {}) do
+    if entry.bagID==bag and entry.slotID==slot and entry.itemID then
+      return entry,token,records and records[token] and records[token].junk==true or false
+    end
+  end
+  return nil
+end
+local function ArmNativeSource(button)
+  if Combat() or mergeSettling or not EmptyCursor() or not button.labEntry then return end
+  local entry=button.labEntry
+  local current,token,marked=CurrentPhysical(entry.bagID,entry.slotID)
+  if not SamePhysical(current,entry) or token~=button.labToken then return end
+  pendingSource={entry={bagID=entry.bagID,slotID=entry.slotID,
+    itemID=entry.itemID,link=entry.link,count=entry.count},
+    token=token,marked=marked,started=Now()}
+end
+local function ObserveNativeSource()
+  if not pendingSource or Combat() then return end
+  if Now()-pendingSource.started>2 then pendingSource=nil;return end
+  if HeldMatches(pendingSource.entry) then
+    nativeSource=pendingSource
+    pendingSource=nil
+  end
+end
+
+-- A popup click-pickup or native drag has no synthetic cursor. Its source
+-- provenance is captured without replacing native OnClick/OnDragStart.
+-- Unknown cursors always stay untouched. This is OUT-OF-COMBAT ONLY.
+function P.TryMergeHeld(target)
+  if Combat() or mergeSettling or not target or not target.itemID then return false end
+  ObserveNativeSource()
+  local origin=nativeSource
+  if not origin or Now()-origin.started>8 or not HeldMatches(origin.entry) then return false end
+  local source=origin.entry
+  if source.bagID==target.bagID and source.slotID==target.slotID then return false end
+  if not ns.StackWork or not ns.StackWork.MatchesTarget or
+      not ns.StackWork.MatchesTarget(source,target) then return false end
+  local latestSource,sourceToken,sourceMarked=CurrentPhysical(source.bagID,source.slotID)
+  local latestTarget,targetToken,targetMarked=CurrentPhysical(target.bagID,target.slotID)
+  if not SamePhysical(latestSource,source) or not
+      SamePhysical(latestTarget,target) or sourceToken~=origin.token then return false end
+  local permitted=ns.StackWork.SellMergeAllowed and
+    ns.StackWork.SellMergeAllowed("bag-to-bag",sourceMarked,targetMarked)
+  if not permitted then return false end
+  if not ClearCursor or not C_Timer or not C_Timer.After then return false end
+  -- Only NOW is an authenticated real popup cursor returned to its source.
+  -- The transaction starts later, after exact source and target validation.
+  nativeSource,pendingSource=nil,nil
+  local ok=pcall(ClearCursor)
+  if not ok or not EmptyCursor() then
+    print("|cff8ad9ffObsidian Bags:|r Pop-out merge stopped: native cursor return not verified")
+    return false
+  end
+  local request={source=source,target=target,sourceToken=sourceToken,
+    targetToken=targetToken,sourceMarked=sourceMarked,targetMarked=targetMarked,
+    started=Now()}
+  mergeSettling=request
+  local function VerifyLater()
+    if mergeSettling~=request then return end
+    if Combat() then mergeSettling=nil;return end
+    local a,at,am=CurrentPhysical(source.bagID,source.slotID)
+    local b,bt,bm=CurrentPhysical(target.bagID,target.slotID)
+    if a and b and not a.locked and not b.locked and
+        SamePhysical(a,source) and SamePhysical(b,target) and
+        at==sourceToken and bt==targetToken and
+        am==sourceMarked and bm==targetMarked then
+      local okRead,live=pcall(C_Container.GetContainerItemInfo,source.bagID,source.slotID)
+      local okDest,dest=pcall(C_Container.GetContainerItemInfo,target.bagID,target.slotID)
+      if okRead and okDest and live and dest and not live.isLocked and
+          not dest.isLocked and live.itemID==source.itemID and
+          live.stackCount==source.count and live.hyperlink==source.link and
+          dest.itemID==target.itemID and dest.stackCount==target.count and
+          dest.hyperlink==target.link then
+        mergeSettling=nil
+        ns.StackWork.MergeTargeted(a,b,"bag-to-bag",am,bm)
+        return
+      end
+    end
+    if Now()-request.started<.8 then C_Timer.After(.03,VerifyLater)
+    else
+      mergeSettling=nil
+      print("|cff8ad9ffObsidian Bags:|r Pop-out merge cancelled: source/target not restored")
+    end
+  end
+  C_Timer.After(0,VerifyLater)
+  return true
+end
+
+-- Exact hit test against currently drawn physical popup cells. A visual
+-- summary tile is never a merge target.
+function P.GetDropTargetAt(x,y)
+  if Combat() or not P.IsOpen() or type(x)~="number" or type(y)~="number" then return nil end
+  for _,button in pairs(physicalButtons) do
+    if button:IsShown() and button.labEntry then
+      local l,r,t,b=button:GetLeft(),button:GetRight(),button:GetTop(),button:GetBottom()
+      if l and r and t and b and x>=l and x<=r and y<=t and y>=b then
+        local entry=button.labEntry
+        return {entry=entry,token=button.labToken}
+      end
+    end
+  end
+  return nil
+end
+
 local function HideTooltip(owner)
   if GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
 end
@@ -36,6 +159,7 @@ local function Close()
   end
   isOpen,selectedID,selectedOwner,pendingRefresh,pendingClose=false,nil,nil,false,false
   dismissAfterCursor=false
+  nativeSource,pendingSource=nil,nil
   if frame then frame:Hide() end
 end
 function P.Close() Close() end
@@ -64,9 +188,33 @@ local function PhysicalButton(bag,slot)
   -- Forever's native handlers must own right-click trade and dragging.
   -- Template blue/new-item glows are never meaningful for reused popup slots.
   if ns.SuppressNativeItemGlows then ns.SuppressNativeItemGlows(button) end
-  -- A popup row is a SOURCE, not a target for unverified occupied merges.
-  -- Any physical merge/swap here would bypass the existing SELL-safe worker.
-  button:SetScript("OnReceiveDrag",function() end)
+  -- Never run the native physical OnReceiveDrag swap. Tracked pop-out
+  -- sources may request the existing SELL-safe exact-target merge instead.
+  button:SetScript("OnReceiveDrag",function(self)
+    P.TryMergeHeld(self.labEntry)
+  end)
+  -- Observation hooks only: DO NOT wrap or replace Blizzard's protected
+  -- OnClick or OnDragStart, which own real item pickup/trade/use.
+  button:HookScript("OnMouseDown",function(self,key)
+    if key=="LeftButton" and not (IsShiftKeyDown and IsShiftKeyDown()) and
+        not (IsAltKeyDown and IsAltKeyDown()) then ArmNativeSource(self) end
+  end)
+  button:HookScript("OnDragStart",function(self)
+    if not Combat() and not nativeSource and not pendingSource then
+      -- OnMouseDown typically captures the native source; if this client
+      -- skips it, a verified cursor observation can still recover it.
+      if not EmptyCursor() then
+        local e=self.labEntry
+        local current,token,marked=e and CurrentPhysical(e.bagID,e.slotID)
+        if e and SamePhysical(current,e) and HeldMatches(e) then
+          nativeSource={entry={bagID=e.bagID,slotID=e.slotID,
+            itemID=e.itemID,link=e.link,count=e.count},
+            token=token,marked=marked,started=Now()}
+        end
+      end
+    end
+    ObserveNativeSource()
+  end)
   local shade=button:CreateTexture(nil,"OVERLAY",nil,1)
   shade:SetAllPoints(button)
   shade:SetColorTexture(.28,.28,.30,.49)
@@ -111,8 +259,20 @@ local function PhysicalButton(bag,slot)
   cursorShield:SetFrameLevel(button:GetFrameLevel()+9)
   cursorShield:EnableMouse(true)
   cursorShield:RegisterForClicks("AnyUp")
-  cursorShield:SetScript("OnReceiveDrag",function() end)
-  cursorShield:SetScript("OnClick",function() end)
+  cursorShield:SetScript("OnReceiveDrag",function()
+    if P.TryMergeHeld(button.labEntry) then return end
+    if ns.MainPanel and ns.MainPanel.FinishCategoryClickPickup then
+      ns.MainPanel.FinishCategoryClickPickup()
+    end
+  end)
+  cursorShield:SetScript("OnClick",function(_,key)
+    if key=="LeftButton" then
+      if P.TryMergeHeld(button.labEntry) then return end
+      if ns.MainPanel and ns.MainPanel.FinishCategoryClickPickup then
+        ns.MainPanel.FinishCategoryClickPickup()
+      end
+    end
+  end)
   cursorShield:Hide()
   button.labCursorShield=cursorShield
   physicalButtons[key]=button
@@ -132,6 +292,8 @@ local function UpdateModifiers()
   -- Do not place a shield over the source while its mouse-drag is held;
   -- native OnDragStart/OnDragStop must remain owned by the original button.
   local held=kind=="item" and not (IsMouseButtonDown and IsMouseButtonDown("LeftButton"))
+  ObserveNativeSource()
+  if nativeSource and EmptyCursor() and Now()-nativeSource.started>.15 then nativeSource=nil end
   lastAlt,lastShift=alt,shift
   for _,button in pairs(physicalButtons) do
     local visible=button:IsShown() and button.labEntry~=nil
@@ -160,8 +322,23 @@ local function MakeFrame()
   frame:SetBackdropBorderColor(.69,.51,.24,.96)
   frame:EnableMouse(true)
   frame:SetScript("OnHide",function()
-    isOpen=false
-    for _,button in pairs(physicalButtons) do button:Hide() end
+    -- The secure X is authorized to hide the already-prepared panel during
+    -- combat. OnHide must NOT hide/rebind its protected native children.
+    isOpen,selectedID,selectedOwner,pendingRefresh,pendingClose=false,nil,nil,false,false
+    dismissAfterCursor=false
+    nativeSource,pendingSource=nil,nil
+    if Combat() then
+      pendingChildHide=true
+      -- When the normal inspector is securely closed after the expanded
+      -- combat view appears, re-conceal the OLD One Stack summary artwork.
+      -- This is cosmetic only: do not touch native item button bindings.
+      if ns.CombatExpanded and ns.CombatExpanded.HideLegacy then
+        pcall(ns.CombatExpanded.HideLegacy,true)
+      end
+    else
+      for _,button in pairs(physicalButtons) do button:Hide() end
+      pendingChildHide=false
+    end
     if GameTooltip and GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
   end)
   title=frame:CreateFontString(nil,"OVERLAY","GameFontNormal")
@@ -176,6 +353,20 @@ local function MakeFrame()
   closeButton:SetPoint("TOPRIGHT",frame,"TOPRIGHT",1,1)
   closeButton:SetSize(27,27)
   closeButton:SetScript("OnClick",Close)
+  -- A secure, preconfigured hardware click closes this *normal* pop-out even
+  -- when its native children cannot be hidden by insecure Lua in combat.
+  -- The familiar close artwork remains; this control only covers its X.
+  secureCloseButton=CreateFrame("Button",nil,frame,"SecureHandlerClickTemplate")
+  secureCloseButton:SetAllPoints(closeButton)
+  secureCloseButton:SetFrameLevel(closeButton:GetFrameLevel()+1)
+  secureCloseButton:RegisterForClicks("LeftButtonUp")
+  secureCloseButton:SetFrameRef("popup",frame)
+  secureCloseButton:SetAttribute("_onclick",[=[
+    if button == "LeftButton" then
+      local popup=self:GetFrameRef("popup")
+      if popup then popup:Hide() end
+    end
+  ]=])
   scroller=CreateFrame("ScrollFrame",nil,frame)
   scroller:SetPoint("TOPLEFT",frame,"TOPLEFT",10,-49)
   scroller:SetPoint("RIGHT",frame,"RIGHT",-9,0)
@@ -227,9 +418,13 @@ local function MakeFrame()
         if ok and widget then known=true;inside=IsPopupOrSummary(widget) end
       end
       if known and not inside then
-        -- Let an in-flight native popup drag complete before hiding its
-        -- physical source frame. Never clear or synthesize the held item.
-        if EmptyCursor() then Close() else dismissAfterCursor=true end
+        -- A main-bag click may turn into a native cursor drag onto one of
+        -- our popup cells. Do not destroy the popup on mouse-DOWN before
+        -- Blizzard has even had a chance to pick up that source item.
+        -- Dismiss after release if nothing is held, otherwise wait for the
+        -- native cursor to settle. Do not clear/synthesize any held item.
+        if down or not EmptyCursor() then dismissAfterCursor=true
+        else Close() end
       end
     end
     wasMouseDown=down
@@ -374,3 +569,20 @@ function P.OnCursorSettled(layout,entries,records,enabled)
     P.Refresh(layout,entries,records,enabled)
   end
 end
+
+-- Clean up any native popup child visibility deferred by secure combat close.
+-- This independent watcher does not depend on Core's unreliable event script.
+local secureExit=CreateFrame("Frame")
+secureExit:RegisterEvent("PLAYER_REGEN_ENABLED")
+local function CleanupClosed()
+  if Combat() or not pendingChildHide or (frame and frame:IsShown()) then return end
+  for _,button in pairs(physicalButtons) do button:Hide() end
+  pendingChildHide=false
+end
+secureExit:SetScript("OnEvent",CleanupClosed)
+local closedPoll=0
+secureExit:SetScript("OnUpdate",function(_,dt)
+  if not pendingChildHide then return end
+  closedPoll=closedPoll+(dt or 0)
+  if closedPoll>=.2 then closedPoll=0;CleanupClosed() end
+end)

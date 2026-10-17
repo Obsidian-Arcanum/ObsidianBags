@@ -69,6 +69,7 @@ local function Cell(i)
   slot:SetTextColor(.98,.84,.55,1)
   slotShade:SetPoint('BOTTOMRIGHT',slot,'BOTTOMRIGHT',2,-1)
   frame.icon,frame.quantity,frame.slot=icon,quantity,slot
+  slot:Hide() -- no diagnostic slot numbers in any combat transition
   cells[i]=frame
   return frame
 end
@@ -109,7 +110,7 @@ function P.Draw(layout,present,blanks,mainCapacity,ammoCapacity,reagentCapacity)
       else
         f.icon:SetTexture(nil);f.quantity:SetText('')
       end
-      f.slot:SetText(entry and (entry.bagID..':'..entry.slotID) or '')
+      f.slot:SetText('')
     end
     f:Show()
   end

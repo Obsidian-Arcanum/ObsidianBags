@@ -103,10 +103,10 @@ end
 -- originalIndex is the saved-layout index used by all real drag transactions.
 -- Unlike the first prototype, compressed screen positions NEVER become new
 -- logical slot IDs. Every empty slot is a REAL eligible physical blank.
-function V.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap)
+function V.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap,forceExpanded)
   local result,counts={},{main=0,ammo=0,reagent=0}
   local db=DB()
-  local oneStack=db.oneStack==true
+  local oneStack=not forceExpanded and db.oneStack==true
   local kinds={{"main",1,mainCap,"regular"},
     {"ammo",mainCap+1,ammoCap,"ammo"},
     {"reagent",mainCap+ammoCap+1,reagentCap,"reagent"}}
@@ -134,7 +134,7 @@ function V.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap)
         end
       end
     end
-    local collapsed=V.Collapsed(kind)
+    local collapsed=not forceExpanded and V.Collapsed(kind) or false
     local shown
     if kind=="reagent" and collapsed then
       -- Preview crafting materials only. A knife/pick/other profession tool
@@ -257,9 +257,20 @@ function V.ShowSummary(kind,data,x,y)
   end
   t.description:SetShown(not data.icon)
   t:Show()
+  if ns.CombatStackPopover and data.itemID and data.sources then
+    ns.CombatStackPopover.Prepare(t,data)
+  end
 end
 function V.HideSummaries()
-  for _,tile in ipairs(summaryTiles) do tile:Hide() end
+  -- Normal One Stack tiles are cosmetic, but a tile that previously hosted a
+  -- secure combat launcher may remain visible behind the expanded canvas if
+  -- Hide is restricted by Forever's combat protection. Conceal the artwork
+  -- independently and let the normal out-of-combat renderer restore alpha=1.
+  local combat=InCombatLockdown and InCombatLockdown()
+  for _,tile in ipairs(summaryTiles) do
+    if combat then pcall(tile.SetAlpha,tile,0) end
+    pcall(tile.Hide,tile)
+  end
   V.summaryDrawIndex=0
 end
 function V.SetMetrics(size,cell)

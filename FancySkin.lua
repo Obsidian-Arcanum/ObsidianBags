@@ -1,4 +1,4 @@
--- VirtualBagsLab 0.0.95: per-skin saved background color and opacity; no inventory-engine changes.
+-- Obsidian Bags 0.0.128: UI polish for Basic theme controls and toggle ordering; no inventory-engine changes.
 -- Never replaces native item-button clicks, item identity, slot bindings,
 -- reconciliation, protected drag handlers, or physical sorting machinery.
 local _, NS = ...
@@ -16,7 +16,7 @@ local tick = 0
 local lastTabFingerprint = ""
 local options, filters, output, coinText, capacityText, emblem, border, backdropTexture, tintTexture
 local dividerText, menuSkinDiagnostic, menuSkinFancy
-local columnValueText, columnEntry, optionsClose
+local columnValueText, columnEntry, categorySlotValueText, categorySlotEntry, optionsClose
 local appearanceModeText, colorValueText, colorPatch, opacitySlider, opacityValueText
 local syncingAppearance = false
 local updateSettingsOptions, profileDisplay, profileList, profileEntry
@@ -260,6 +260,7 @@ local function MakeButton(parent, name, width, height, click, iconName, diagText
         local baseW, baseH = ((self:GetWidth() or 28)-10) * scale, ((self:GetHeight() or 28)-10) * scale
         self.fancyArt:Show()
         if self.diagLabel then self.diagLabel:Hide() end
+        if self.diagAltArt then self.diagAltArt:Hide() end
         self.fancyArt:ClearAllPoints()
         self.fancyArt:SetPoint("CENTER", self, "CENTER", pressed and 1 or 0, pressed and -1 or 0)
         self.fancyArt:SetSize(baseW, baseH)
@@ -297,6 +298,7 @@ local function MakeButton(parent, name, width, height, click, iconName, diagText
         if self.fancySheen then self.fancySheen:Hide() end
         self.fancyArt:Show()
         if self.diagLabel then self.diagLabel:Hide() end
+        if self.diagAltArt then self.diagAltArt:Hide() end
         self.fancyArt:ClearAllPoints()
         self.fancyArt:SetPoint("CENTER", self, "CENTER", pressed and 1 or 0, pressed and -1 or 0)
         self.fancyArt:SetSize((self:GetWidth() or 31)-10, (self:GetHeight() or 31)-10)
@@ -319,11 +321,26 @@ local function MakeButton(parent, name, width, height, click, iconName, diagText
       self.fancyArt:SetSize((self:GetWidth() or 31)-10, (self:GetHeight() or 31)-10)
       if self.diagText and self.diagText ~= "" then
         self.fancyArt:Hide()
+        if self.diagAltArt then self.diagAltArt:Hide() end
         self.diagLabel:Show()
         self.diagLabel:ClearAllPoints()
         self.diagLabel:SetPoint("CENTER", self, "CENTER", pressed and 1 or 0, pressed and -1 or 0)
+      elseif self.diagAltTexture then
+        self.fancyArt:Hide()
+        if self.diagLabel then self.diagLabel:Hide() end
+        if not self.diagAltArt then
+          local diagArt = self:CreateTexture(nil,"ARTWORK")
+          self.diagAltArt = diagArt
+        end
+        self.diagAltArt:SetTexture(self.diagAltTexture)
+        self.diagAltArt:Show()
+        self.diagAltArt:ClearAllPoints()
+        self.diagAltArt:SetPoint("CENTER", self, "CENTER", pressed and 1 or 0, pressed and -1 or 0)
+        self.diagAltArt:SetSize((self:GetWidth() or 31)-10, (self:GetHeight() or 31)-10)
+        self.diagAltArt:SetVertexColor(1,1,1,1)
       else
         self.fancyArt:Show()
+        if self.diagAltArt then self.diagAltArt:Hide() end
         if self.diagLabel then self.diagLabel:Hide() end
         self.fancyArt:ClearAllPoints()
         self.fancyArt:SetPoint("CENTER", self, "CENTER", pressed and 1 or 0, pressed and -1 or 0)
@@ -611,8 +628,8 @@ local function ApplySlotArt()
     -- The old full-cell Slot.tga OVERLAY drew an inset gold rim and turned
     -- alpha-dimmed search misses chalky. Do not overlay it on item buttons.
     if b.labFancyTrim then b.labFancyTrim:Hide() end
-    if b.labPhysicalLabel then b.labPhysicalLabel:SetShown(not styled) end
-    if b.labLabelBackground then b.labLabelBackground:SetShown(not styled) end
+    if b.labPhysicalLabel then b.labPhysicalLabel:Hide() end
+    if b.labLabelBackground then b.labLabelBackground:Hide() end
   end
 end
 
@@ -704,14 +721,25 @@ local function RedCommand(parent, command, y, description)
   return button
 end
 local function SyncColumnOptions()
-  if not columnValueText or not controls then return end
-  local current=(controls.getColumns and controls.getColumns()) or 12
-  local maximum=(controls.getColumnMaximum and controls.getColumnMaximum()) or 12
-  maximum=math.max(9,maximum)
-  current=math.max(9,math.min(maximum,tonumber(current) or 12))
-  columnValueText:SetText("Main grid: "..current.." columns   (9 to "..maximum..")")
+  if not controls then return end
+  local maximum=math.max(9,(controls.getColumnMaximum and controls.getColumnMaximum()) or 12)
+  local current=math.max(9,math.min(maximum,tonumber(
+    controls.getColumns and controls.getColumns() or 10) or 10))
+  if columnValueText then
+    columnValueText:SetText("Standard: "..current.." slots per row  (9 to "..maximum..")")
+  end
   if columnEntry and not columnEntry:HasFocus() then
     columnEntry:SetText(tostring(current))
+  end
+  local catMax=math.max(6,(controls.getCategorySlotMaximum and
+    controls.getCategorySlotMaximum()) or 12)
+  local cat=math.max(6,math.min(catMax,tonumber(
+    controls.getCategorySlotColumns and controls.getCategorySlotColumns() or 6) or 6))
+  if categorySlotValueText then
+    categorySlotValueText:SetText("Category: "..cat.." slots per lane  (6 to "..catMax..")")
+  end
+  if categorySlotEntry and not categorySlotEntry:HasFocus() then
+    categorySlotEntry:SetText(tostring(cat))
   end
 end
 local function SetColumns(value)
@@ -721,10 +749,245 @@ local function SetColumns(value)
     return
   end
   local max=math.max(9,(controls.getColumnMaximum and controls.getColumnMaximum()) or 12)
-  value=math.max(9,math.min(max,math.floor((tonumber(value) or 12)+.5)))
+  value=math.max(9,math.min(max,math.floor((tonumber(value) or 10)+.5)))
   if controls.setColumns then controls.setColumns(value) end
   SyncColumnOptions()
 end
+local function SetCategorySlots(value)
+  local maximum=math.max(6,(controls.getCategorySlotMaximum and
+    controls.getCategorySlotMaximum()) or 12)
+  value=math.max(6,math.min(maximum,math.floor((tonumber(value) or 6)+.5)))
+  if controls.setCategorySlotColumns then
+    local ok,reason=controls.setCategorySlotColumns(value)
+    if not ok then Print(reason or "Unable to change Category View slot columns") end
+  end
+  SyncColumnOptions()
+end
+-- Both independent slot-width controls and the category lane count live in
+-- this single section between Profiles and Bank / Inventory Sizing.
+-- Nested callbacks live outside the already-large BuildOptions initializer
+-- to stay comfortably inside Forever's Lua 5.1 upvalue limits.
+local function BuildLayoutOptions(contents,advancedOptions)
+  Header(contents,"INVENTORY VIEW SETTINGS",-862)
+  local std=MakeLabel(contents,"STANDARD VIEW", "GameFontHighlightSmall",GOLD)
+  std:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-892)
+  columnValueText=MakeLabel(contents,"", "GameFontHighlightSmall",CYAN)
+  columnValueText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-917)
+  local minus=MenuAction(contents,-945,"−  Fewer columns",function()
+    SetColumns(((controls.getColumns and controls.getColumns()) or 10)-1)
+  end)
+  minus:SetWidth(145)
+  local plus=MenuAction(contents,-945,"+  More columns",function()
+    SetColumns(((controls.getColumns and controls.getColumns()) or 10)+1)
+  end)
+  plus:SetWidth(145)
+  plus:ClearAllPoints();plus:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-945)
+  columnEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
+  columnEntry:SetSize(49,24)
+  columnEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-945)
+  columnEntry:SetAutoFocus(false);columnEntry:SetNumeric(true);columnEntry:SetMaxLetters(5)
+  columnEntry:SetScript("OnEnterPressed",function(self)
+    SetColumns(tonumber(self:GetText()));self:ClearFocus()
+  end)
+  columnEntry:SetScript("OnEscapePressed",function(self) self:ClearFocus();SyncColumnOptions() end)
+  local resetStandard=MenuAction(contents,-975,"Reset Standard to 10",function()
+    columnEntry:ClearFocus()
+    SetColumns(10)
+  end)
+  resetStandard:SetWidth(205)
+  local stdNote=MakeLabel(contents,"Minimum 9. Maximum follows MAIN bag capacity.",
+    "GameFontHighlightSmall",{.65,.72,.78})
+  stdNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1008)
+
+  local cat=MakeLabel(contents,"CATEGORY VIEW", "GameFontHighlightSmall",GOLD)
+  cat:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1039)
+  categorySlotValueText=MakeLabel(contents,"", "GameFontHighlightSmall",CYAN)
+  categorySlotValueText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1064)
+  local catMinus=MenuAction(contents,-1092,"−  Fewer columns",function()
+    SetCategorySlots(((controls.getCategorySlotColumns and
+      controls.getCategorySlotColumns()) or 6)-1)
+  end)
+  catMinus:SetWidth(145)
+  local catPlus=MenuAction(contents,-1092,"+  More columns",function()
+    SetCategorySlots(((controls.getCategorySlotColumns and
+      controls.getCategorySlotColumns()) or 6)+1)
+  end)
+  catPlus:SetWidth(145)
+  catPlus:ClearAllPoints();catPlus:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-1092)
+  categorySlotEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
+  categorySlotEntry:SetSize(49,24)
+  categorySlotEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-1092)
+  categorySlotEntry:SetAutoFocus(false);categorySlotEntry:SetNumeric(true)
+  categorySlotEntry:SetMaxLetters(5)
+  categorySlotEntry:SetScript("OnEnterPressed",function(self)
+    SetCategorySlots(tonumber(self:GetText()));self:ClearFocus()
+  end)
+  categorySlotEntry:SetScript("OnEscapePressed",function(self)
+    self:ClearFocus();SyncColumnOptions()
+  end)
+  local resetCategory=MenuAction(contents,-1122,"Reset Category to 6",function()
+    categorySlotEntry:ClearFocus()
+    SetCategorySlots(6)
+  end)
+  resetCategory:SetWidth(205)
+  local catNote=MakeLabel(contents,"Minimum 6 slots per category lane; narrower screens may fit fewer.",
+    "GameFontHighlightSmall",{.65,.72,.78})
+  catNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1155)
+
+  local lanesLabel=MakeLabel(contents,"CATEGORY VIEW  /  SECTION COLUMNS",
+    "GameFontHighlightSmall",GOLD)
+  lanesLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1186)
+  local laneButtons={}
+  for n=1,4 do
+    local chosen=n
+    local b=MenuAction(contents,-1214,tostring(n).." column"..(n==1 and "" or "s"),function()
+      if controls.setCategoryColumns then
+        local ok,reason=controls.setCategoryColumns(chosen)
+        if not ok then Print(reason or "Unable to change category section columns") end
+      end
+      if updateSettingsOptions then updateSettingsOptions() end
+    end)
+    b:SetWidth(96)
+    b:ClearAllPoints();b:SetPoint("TOPLEFT",contents,"TOPLEFT",16+(n-1)*109,-1214)
+    laneButtons[#laneButtons+1]=b
+  end
+  advancedOptions[#advancedOptions+1]=function()
+    local current=controls.getCategoryColumns and controls.getCategoryColumns() or 2
+    for n,button in ipairs(laneButtons) do
+      if button and button.menuLabel then
+        button.menuLabel:SetText((n==current and "[X]  " or "[ ]  ")..tostring(n))
+      end
+    end
+    SyncColumnOptions()
+  end
+  local laneNote=MakeLabel(contents,
+    "Sections fill left to right, then down; each lane keeps its own item grid.",
+    "GameFontHighlightSmall",{.65,.72,.78})
+  laneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1247)
+end
+-- Bank preferences use the same visual control vocabulary as carried-bag
+-- Standard / Category View settings. They are independently persisted.
+local function BuildBankLayoutOptions(contents,advancedOptions)
+  Header(contents,"BANK VIEW SETTINGS",-1275)
+  local bank=NS.BankPanel
+  local function Apply(setter,value)
+    if not bank or not bank[setter] then return end
+    local ok,reason=bank[setter](value)
+    if not ok then Print(reason or "Bank layout change refused") end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end
+
+  local stdLabel=MakeLabel(contents,"STANDARD VIEW","GameFontHighlightSmall",GOLD)
+  stdLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1300)
+  local stdValue=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
+  stdValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1322)
+  local stdLess=MenuAction(contents,-1345,"−  Fewer columns",function()
+    Apply("SetStandardColumns",(bank.GetStandardColumns and bank.GetStandardColumns() or 10)-1)
+  end)
+  stdLess:SetWidth(145)
+  local stdMore=MenuAction(contents,-1345,"+  More columns",function()
+    Apply("SetStandardColumns",(bank.GetStandardColumns and bank.GetStandardColumns() or 10)+1)
+  end)
+  stdMore:SetWidth(145)
+  stdMore:ClearAllPoints();stdMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-1345)
+  local stdEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
+  stdEntry:SetSize(49,24);stdEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-1345)
+  stdEntry:SetAutoFocus(false);stdEntry:SetNumeric(true);stdEntry:SetMaxLetters(5)
+  stdEntry:SetScript("OnEnterPressed",function(self)
+    Apply("SetStandardColumns",tonumber(self:GetText()));self:ClearFocus()
+  end)
+  local resetStd=MenuAction(contents,-1374,"Reset Standard to 10",function()
+    stdEntry:ClearFocus();Apply("SetStandardColumns",10)
+  end)
+  resetStd:SetWidth(205)
+
+  local catLabel=MakeLabel(contents,"CATEGORY VIEW","GameFontHighlightSmall",GOLD)
+  catLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1407)
+  local catValue=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
+  catValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1429)
+  local catLess=MenuAction(contents,-1452,"−  Fewer columns",function()
+    Apply("SetCategorySlotColumns",(bank.GetCategorySlotColumns and bank.GetCategorySlotColumns() or 6)-1)
+  end)
+  catLess:SetWidth(145)
+  local catMore=MenuAction(contents,-1452,"+  More columns",function()
+    Apply("SetCategorySlotColumns",(bank.GetCategorySlotColumns and bank.GetCategorySlotColumns() or 6)+1)
+  end)
+  catMore:SetWidth(145)
+  catMore:ClearAllPoints();catMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-1452)
+  local catEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
+  catEntry:SetSize(49,24);catEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-1452)
+  catEntry:SetAutoFocus(false);catEntry:SetNumeric(true);catEntry:SetMaxLetters(5)
+  catEntry:SetScript("OnEnterPressed",function(self)
+    Apply("SetCategorySlotColumns",tonumber(self:GetText()));self:ClearFocus()
+  end)
+  local resetCat=MenuAction(contents,-1481,"Reset Category to 6",function()
+    catEntry:ClearFocus();Apply("SetCategorySlotColumns",6)
+  end)
+  resetCat:SetWidth(205)
+
+  local lanesTitle=MakeLabel(contents,"CATEGORY VIEW  /  SECTION COLUMNS",
+    "GameFontHighlightSmall",GOLD)
+  lanesTitle:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1520)
+  local lanes={}
+  for n=1,4 do
+    local chosen=n
+    local b=MenuAction(contents,-1548,tostring(n).." column"..(n==1 and "" or "s"),function()
+      Apply("SetCategoryColumns",chosen)
+    end)
+    b:SetWidth(96)
+    b:ClearAllPoints();b:SetPoint("TOPLEFT",contents,"TOPLEFT",16+(n-1)*109,-1548)
+    lanes[#lanes+1]=b
+  end
+  local laneNote=MakeLabel(contents,
+    "Sections fill left to right, then down; each bank lane has its own item grid.",
+    "GameFontHighlightSmall",{.65,.72,.78})
+  laneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1580)
+  local bankOneStack=MenuAction(contents,-1612,"",function()
+    Apply("SetOneStack",not (bank and bank.GetOneStack and bank.GetOneStack()))
+  end)
+  bankOneStack:SetWidth(295)
+  local stackSwitch=CreateFrame("Button",nil,contents)
+  stackSwitch:SetSize(66,25)
+  stackSwitch:SetPoint("TOPLEFT",contents,"TOPLEFT",352,-1612)
+  stackSwitch:SetFrameLevel(bankOneStack:GetFrameLevel()+2)
+  local stackTrack=stackSwitch:CreateTexture(nil,"ARTWORK")
+  stackTrack:SetAllPoints(stackSwitch)
+  local stackThumb=stackSwitch:CreateTexture(nil,"OVERLAY")
+  stackThumb:SetSize(23,23)
+  stackThumb:SetTexture(ART.."SwitchKnob.tga")
+  stackSwitch:SetScript("OnClick",function()
+    Apply("SetOneStack",not (bank and bank.GetOneStack and bank.GetOneStack()))
+  end)
+  local oneNote=MakeLabel(contents,
+    "Collapsed bank categories always show unique items, regardless of One Stack.",
+    "GameFontHighlightSmall",{.65,.72,.78})
+  oneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1645)
+  advancedOptions[#advancedOptions+1]=function()
+    if not bank then return end
+    local std=bank.GetStandardColumns() or 10
+    local cat=bank.GetCategorySlotColumns() or 6
+    stdValue:SetText("Standard: "..std.." slots per row  (9 to 18)")
+    catValue:SetText("Category: "..cat.." slots per lane  (6 to 16)")
+    if not stdEntry:HasFocus() then stdEntry:SetText(tostring(std)) end
+    if not catEntry:HasFocus() then catEntry:SetText(tostring(cat)) end
+    local current=bank.GetCategoryColumns() or 2
+    for n,button in ipairs(lanes) do
+      if button.menuLabel then
+        button.menuLabel:SetText((n==current and "[X]  " or "[ ]  ")..tostring(n))
+      end
+    end
+    local active=bank.GetOneStack()
+    if bankOneStack.menuLabel then
+      bankOneStack.menuLabel:SetText((active and "[ON]  " or "[OFF]  ")..
+        "Bank One Stack (combine duplicate items visually)")
+    end
+    stackTrack:SetTexture(ART..(active and "SwitchOn.tga" or "SwitchOff.tga"))
+    stackTrack:SetAlpha(active and 1 or .75)
+    stackThumb:ClearAllPoints()
+    stackThumb:SetPoint("LEFT",stackSwitch,"LEFT",active and 42 or 2,0)
+  end
+end
+
 local function BuildOptions()
   -- 20% roomier settings panel, still one main page. Only developer tools
   -- and maintenance actions have their own optional Diagnostics page.
@@ -836,7 +1099,7 @@ local function BuildOptions()
   back:Hide()
 
   Header(contents,"THEMES",-10)
-  menuSkinDiagnostic=MenuAction(contents,-35,"Diagnostic  •  simple developer skin",function() F.SetSkin("diagnostic") end)
+  menuSkinDiagnostic=MenuAction(contents,-35,"Basic  •  Minimalist Skin",function() F.SetSkin("diagnostic") end)
   menuSkinFancy=MenuAction(contents,-63,"Fancy  •  Obsidian Arcanum",function() F.SetSkin("fancy") end)
   -- A hovered theme temporarily brightens, but its saved selection remains
   -- gold after mouse leaves. Generic MenuAction.OnLeave used to erase it.
@@ -865,48 +1128,20 @@ local function BuildOptions()
   BindTheme(menuSkinDiagnostic,"diagnostic")
   BindTheme(menuSkinFancy,"fancy")
 
-  Header(contents,"MAIN INVENTORY LAYOUT",-112)
-  columnValueText=MakeLabel(contents,"Main grid: 12 columns","GameFontHighlight",CYAN)
-  columnValueText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-139)
-  local minus=MenuAction(contents,-171,"−  Fewer columns",function()
-    SetColumns(((controls.getColumns and controls.getColumns()) or 12)-1)
-  end)
-  minus:SetWidth(145)
-  local plus=MenuAction(contents,-171,"+  More columns",function()
-    SetColumns(((controls.getColumns and controls.getColumns()) or 12)+1)
-  end)
-  plus:ClearAllPoints();plus:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-171)
-  plus:SetWidth(145)
-  columnEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
-  columnEntry:SetSize(49,24)
-  columnEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-171)
-  columnEntry:SetAutoFocus(false);columnEntry:SetNumeric(true);columnEntry:SetMaxLetters(5)
-  columnEntry:SetScript("OnEnterPressed",function(self)
-    SetColumns(tonumber(self:GetText()));self:ClearFocus()
-  end)
-  columnEntry:SetScript("OnEscapePressed",function(self) self:ClearFocus();SyncColumnOptions() end)
-  local apply=MenuAction(contents,-201,"Apply column count",function()
-    SetColumns(tonumber(columnEntry:GetText()));columnEntry:ClearFocus()
-  end)
-  apply:SetWidth(205)
-  local columnNote=MakeLabel(contents,"Minimum 9. Maximum follows current MAIN bag capacity.",
-    "GameFontHighlightSmall",{.65,.72,.78})
-  columnNote:SetPoint("TOPLEFT",contents,"TOPLEFT",15,-230)
-
-  Header(contents,"BACKGROUND APPEARANCE  /  CURRENT SKIN",-268)
+  Header(contents,"BACKGROUND APPEARANCE  /  CURRENT SKIN",-115)
   appearanceModeText=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-  appearanceModeText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-295)
-  local pick=MenuAction(contents,-324,"Choose background color...",OpenBackgroundPicker)
+  appearanceModeText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-142)
+  local pick=MenuAction(contents,-171,"Choose background color...",OpenBackgroundPicker)
   pick:SetWidth(240)
   colorPatch=pick:CreateTexture(nil,"OVERLAY")
   colorPatch:SetSize(15,15);colorPatch:SetPoint("RIGHT",pick,"RIGHT",-10,0)
   colorValueText=MakeLabel(contents,"","GameFontHighlightSmall",GOLD)
   colorValueText:SetPoint("LEFT",pick,"RIGHT",13,0)
   local opacityLabel=MakeLabel(contents,"Background opacity","GameFontHighlightSmall",GOLD)
-  opacityLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-365)
+  opacityLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-212)
   opacitySlider=CreateFrame("Slider",nil,contents,"BackdropTemplate")
   opacitySlider:SetSize(340,16)
-  opacitySlider:SetPoint("TOPLEFT",contents,"TOPLEFT",21,-394)
+  opacitySlider:SetPoint("TOPLEFT",contents,"TOPLEFT",21,-241)
   opacitySlider:SetOrientation("HORIZONTAL")
   opacitySlider:SetMinMaxValues(0,1);opacitySlider:SetValueStep(.01)
   if opacitySlider.SetObeyStepOnDrag then opacitySlider:SetObeyStepOnDrag(true) end
@@ -929,18 +1164,18 @@ local function BuildOptions()
   opacitySlider:SetScript("OnMouseWheel",function(self,delta)
     self:SetValue(Clamp01(self:GetValue()+(delta or 0)*.05,1))
   end)
-  local resetColor=MenuAction(contents,-433,"Reset color",function()
+  local resetColor=MenuAction(contents,-280,"Reset color",function()
     ResetAppearancePart(F.IsFancy() and "fancy" or "diagnostic","color")
   end)
   resetColor:SetWidth(172)
-  local resetOpacity=MenuAction(contents,-433,"Reset opacity",function()
+  local resetOpacity=MenuAction(contents,-280,"Reset opacity",function()
     ResetAppearancePart(F.IsFancy() and "fancy" or "diagnostic","opacity")
   end)
-  resetOpacity:ClearAllPoints();resetOpacity:SetPoint("TOPLEFT",contents,"TOPLEFT",201,-433)
+  resetOpacity:ClearAllPoints();resetOpacity:SetPoint("TOPLEFT",contents,"TOPLEFT",201,-280)
   resetOpacity:SetWidth(172)
   local appearanceNote=MakeLabel(contents,"Each skin retains its own appearance in the selected settings profile.",
     "GameFontHighlightSmall",{.65,.72,.78})
-  appearanceNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-467)
+  appearanceNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-314)
 
   local function UpdatePanels()
     if NS.Profiles then NS.Profiles.Capture() end
@@ -1038,17 +1273,17 @@ local function BuildOptions()
       Draw(value)
     end
   end
-  Header(contents,"TOGGLES",-501)
-  Toggle(-532,"Lock window position","lockWindow",false)
-  Toggle(-559,"Show extra controls (key / filter / sort / bags)","showControls",true)
-  Toggle(-586,"Automatically sort when bags open","sortOnOpen",false)
-  Toggle(-613,"Reverse visual category order on Sort","reverseSort",false)
-  Toggle(-640,"Separate Utility Bag (arrows / ammo / shards)","separateUtilityBag",true)
-  Toggle(-667,"Separate Reagent Bag","separateReagentBag",true)
-  Toggle(-694,"One Stack (combine duplicate items visually)","oneStack",false)
-  Toggle(-721,"Rarity corner indicators","showCorners",false)
-  Toggle(-748,"Show Blizzard backpack and equipped bags","showBlizzardBags",false)
-  Toggle(-775,"Show Blizzard bank window","showBlizzardBank",false)
+  Header(contents,"TOGGLES",-348)
+  Toggle(-379,"One Stack (combine duplicate items visually)","oneStack",false)
+  Toggle(-406,"Separate Utility Bag (arrows / ammo / shards)","separateUtilityBag",true)
+  Toggle(-433,"Separate Reagent Bag","separateReagentBag",true)
+  Toggle(-460,"Show extra controls (key / filter / sort / bags)","showControls",true)
+  Toggle(-487,"Automatically sort when bags open","sortOnOpen",false)
+  Toggle(-514,"Lock window position","lockWindow",false)
+  Toggle(-541,"Rarity corner indicators","showCorners",false)
+  Toggle(-568,"Reverse visual category order on Sort","reverseSort",false)
+  Toggle(-595,"Show Blizzard backpack and equipped bags","showBlizzardBags",false)
+  Toggle(-622,"Show Blizzard bank window","showBlizzardBank",false)
   advancedOptions[#advancedOptions+1]=function()
     local longest=0
     for _,row in ipairs(toggleRows) do
@@ -1071,11 +1306,11 @@ local function BuildOptions()
   local toggleNote=MakeLabel(contents,
     "Specialty headings use the equipped bag type. Native windows are hidden by default.",
     "GameFontHighlightSmall",{.64,.75,.82})
-  toggleNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-808)
+  toggleNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-655)
 
-  Header(contents,"CONFIGURATION PROFILES",-851)
+  Header(contents,"CONFIGURATION PROFILES",-698)
   profileDisplay=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-  profileDisplay:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-879)
+  profileDisplay:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-726)
   local profilePage=1
   local choose
   -- Transparent dismiss catcher: above the options controls, BELOW the
@@ -1213,7 +1448,7 @@ local function BuildOptions()
       end
     end
   end
-  choose=MenuAction(contents,-905,"Choose character or custom profile...",function()
+  choose=MenuAction(contents,-752,"Choose character or custom profile...",function()
     if profileList:IsShown() then CloseChoices()
     else profilePage=1;ShowProfilePage();dismiss:Show();profileList:Show() end
   end)
@@ -1233,9 +1468,9 @@ local function BuildOptions()
   end)
   local profileName=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
   profileName:SetSize(194,23)
-  profileName:SetPoint("TOPLEFT",contents,"TOPLEFT",20,-940)
+  profileName:SetPoint("TOPLEFT",contents,"TOPLEFT",20,-787)
   profileName:SetAutoFocus(false);profileName:SetMaxLetters(32)
-  local create=MenuAction(contents,-940,"Create named profile",function()
+  local create=MenuAction(contents,-787,"Create named profile",function()
     if NS.Profiles then
       local ok,why=NS.Profiles.Create(profileName:GetText())
       if not ok then Print(why or "Unable to create profile")
@@ -1244,16 +1479,61 @@ local function BuildOptions()
     profileName:ClearFocus()
   end)
   create:SetWidth(168)
-  create:ClearAllPoints();create:SetPoint("TOPLEFT",contents,"TOPLEFT",224,-940)
+  create:ClearAllPoints();create:SetPoint("TOPLEFT",contents,"TOPLEFT",224,-787)
   local pnote=MakeLabel(contents,
     "Profiles share settings only, not character items, SELL marks, or layouts.",
     "GameFontHighlightSmall",{.65,.72,.78})
-  pnote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-976)
+  pnote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-823)
+
+  -- View selection is the first layout control. Editing category membership
+  -- remains exclusive to the dedicated Manage Categories subpage.
+  Header(contents,"INVENTORY VIEW",-862)
+  local standardChoice=MenuAction(contents,-894,"",function()
+    if controls.setInventoryView then
+      local ok,reason=controls.setInventoryView("standard")
+      if not ok then Print(reason or "View change refused") end
+    end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  standardChoice:SetWidth(390)
+  local categoryChoice=MenuAction(contents,-926,"",function()
+    if controls.setInventoryView then
+      local ok,reason=controls.setInventoryView("category")
+      if not ok then Print(reason or "View change refused") end
+    end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  categoryChoice:SetWidth(390)
+  local manageCategories=MenuAction(contents,-961,"Manage Categories  >",function()
+    ShowPage("categories")
+  end)
+  manageCategories:SetWidth(390)
+  local categoryNote=MakeLabel(contents,
+    "Manage Categories edits display order, matching priority, and custom rules.",
+    "GameFontHighlightSmall",{.64,.75,.82})
+  categoryNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-997)
+  advancedOptions[#advancedOptions+1]=function()
+    local mode=controls.getInventoryView and controls.getInventoryView() or "standard"
+    standardChoice.menuLabel:SetText((mode=="standard" and "[X]  " or "[ ]  ")..
+      "Standard (default)")
+    categoryChoice.menuLabel:SetText((mode=="category" and "[X]  " or "[ ]  ")..
+      "Category View")
+  end
+  local layoutContents=CreateFrame("Frame",nil,contents)
+  layoutContents:SetSize(contents:GetWidth(),1680)
+  layoutContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-190)
+  BuildLayoutOptions(layoutContents,advancedOptions)
+  BuildBankLayoutOptions(layoutContents,advancedOptions)
+  -- Bank sizing and Developer / Maintenance retain their established local
+  -- spacing and are shifted down below the newly ordered view settings.
+  local lowerContents=CreateFrame("Frame",nil,contents)
+  lowerContents:SetSize(contents:GetWidth(),2100)
+  lowerContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-920)
 
   local prefs=NS.PanelPreferences
-  Header(contents,"BANK / INVENTORY SIZING",-1015)
+  Header(lowerContents,"BANK / INVENTORY SIZING",-1015)
   local groupControls={}
-  local allLink=MenuAction(contents,-1042,"",function()
+  local allLink=MenuAction(lowerContents,-1042,"",function()
     local enabled=not prefs.AllLinked(DB())
     prefs.SetLinked(DB(),"iconSize",enabled)
     prefs.SetLinked(DB(),"gridSpacing",enabled)
@@ -1266,40 +1546,40 @@ local function BuildOptions()
     allLink.menuLabel:SetPoint("CENTER",allLink,"CENTER",0,0)
     allLink.menuLabel:SetJustifyH("CENTER")
   end
-  local linkNote=MakeLabel(contents,
+  local linkNote=MakeLabel(lowerContents,
     "Linked by default. Unlink to resize the bank independently.",
     "GameFontHighlightSmall",{.64,.75,.82})
-  linkNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1072)
+  linkNote:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,-1072)
   local function LinkedRow(label,key,low,high,y)
-    local header=MakeLabel(contents,label,"GameFontHighlightSmall",GOLD)
-    header:SetPoint("TOPLEFT",contents,"TOPLEFT",16,y)
-    local link=MenuAction(contents,y+3,"",function()
+    local header=MakeLabel(lowerContents,label,"GameFontHighlightSmall",GOLD)
+    header:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,y)
+    local link=MenuAction(lowerContents,y+3,"",function()
       prefs.SetLinked(DB(),key,not prefs.Linked(DB(),key));UpdatePanels()
     end)
     link:SetWidth(86)
-    link:ClearAllPoints();link:SetPoint("TOPLEFT",contents,"TOPLEFT",324,y+3)
+    link:ClearAllPoints();link:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",324,y+3)
     if link.menuLabel then
       link.menuLabel:ClearAllPoints()
       link.menuLabel:SetPoint("CENTER",link,"CENTER",0,0)
       link.menuLabel:SetJustifyH("CENTER")
     end
-    local aLabel=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-    aLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",18,y-31)
-    local bLabel=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-    bLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",18,y-62)
+    local aLabel=MakeLabel(lowerContents,"","GameFontHighlightSmall",CYAN)
+    aLabel:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",18,y-31)
+    local bLabel=MakeLabel(lowerContents,"","GameFontHighlightSmall",CYAN)
+    bLabel:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",18,y-62)
     local function Adjust(kind,change)
       local old=tonumber(prefs.Get(DB(),kind,key)) or low
       prefs.Set(DB(),kind,key,math.max(low,math.min(high,old+change)))
       UpdatePanels()
     end
     for _,row in ipairs({{kind="main",yy=y-27},{kind="bank",yy=y-58}}) do
-      local dec=MenuAction(contents,row.yy,"−",function() Adjust(row.kind,-1) end)
+      local dec=MenuAction(lowerContents,row.yy,"−",function() Adjust(row.kind,-1) end)
       dec:SetWidth(52);dec:ClearAllPoints()
-      dec:SetPoint("TOPLEFT",contents,"TOPLEFT",304,row.yy)
+      dec:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",304,row.yy)
       if dec.menuLabel then dec.menuLabel:ClearAllPoints(); dec.menuLabel:SetPoint("CENTER",dec,"CENTER",0,0); dec.menuLabel:SetJustifyH("CENTER") end
-      local inc=MenuAction(contents,row.yy,"+",function() Adjust(row.kind,1) end)
+      local inc=MenuAction(lowerContents,row.yy,"+",function() Adjust(row.kind,1) end)
       inc:SetWidth(52);inc:ClearAllPoints()
-      inc:SetPoint("TOPLEFT",contents,"TOPLEFT",370,row.yy)
+      inc:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",370,row.yy)
       if inc.menuLabel then inc.menuLabel:ClearAllPoints(); inc.menuLabel:SetPoint("CENTER",inc,"CENTER",0,0); inc.menuLabel:SetJustifyH("CENTER") end
     end
     groupControls[#groupControls+1]=function()
@@ -1312,19 +1592,19 @@ local function BuildOptions()
   LinkedRow("ICON SIZE","iconSize",30,42,-1113)
   LinkedRow("CELL SPACING","gridSpacing",2,10,-1226)
   LinkedRow("ITEM COUNT FONT SIZE","countFontSize",8,20,-1339)
-  local mainColor=MenuAction(contents,-1450,"Inventory font color...",function()
+  local mainColor=MenuAction(lowerContents,-1450,"Inventory font color...",function()
     OpenFontPicker("main")
   end)
   mainColor:SetWidth(210)
-  local bankColor=MenuAction(contents,-1481,"Bank font color...",function()
+  local bankColor=MenuAction(lowerContents,-1481,"Bank font color...",function()
     OpenFontPicker("bank")
   end)
   bankColor:SetWidth(210)
-  local colorsNote=MakeLabel(contents,
+  local colorsNote=MakeLabel(lowerContents,
     "Link FONT SIZE to also link both count colors.",
     "GameFontHighlightSmall",{.64,.75,.82})
-  colorsNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1512)
-  local resetFont=MenuAction(contents,-1540,"Reset count font to defaults",function()
+  colorsNote:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,-1512)
+  local resetFont=MenuAction(lowerContents,-1540,"Reset count font to defaults",function()
     DB().countFontSize=nil;DB().countFontColor=nil
     DB().bankCountFontSize=nil;DB().bankCountFontColor=nil
     UpdatePanels()
@@ -1338,84 +1618,16 @@ local function BuildOptions()
     for _,fn in ipairs(groupControls) do fn() end
   end
 
-  Header(contents,"DEVELOPER & MAINTENANCE",-1603)
-  local diagnosticsButton=MenuAction(contents,-1632,"Diagnostics  /  Advanced Tools",function()
+  Header(lowerContents,"DEVELOPER & MAINTENANCE",-1603)
+  local diagnosticsButton=MenuAction(lowerContents,-1632,"Diagnostics  /  Advanced Tools",function()
     ShowPage("diagnostics")
   end)
   diagnosticsButton:SetWidth(380)
-  local diagNote=MakeLabel(contents,
+  local diagNote=MakeLabel(lowerContents,
     "Commands and maintenance actions are available on a separate page.",
     "GameFontHighlightSmall",{.65,.72,.78})
-  diagNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1665)
-  -- View mode stays at the bottom. Category Manager is a separate scroll page
-  -- within this same settings frame; inventory is never a membership drop target.
-  Header(contents,"INVENTORY VIEW",-1713)
-  local standardChoice=MenuAction(contents,-1743,"",function()
-    if controls.setInventoryView then
-      local ok,reason=controls.setInventoryView("standard")
-      if not ok then Print(reason or "View change refused") end
-    end
-    if updateSettingsOptions then updateSettingsOptions() end
-  end)
-  standardChoice:SetWidth(390)
-  local categoryChoice=MenuAction(contents,-1775,"",function()
-    if controls.setInventoryView then
-      local ok,reason=controls.setInventoryView("category")
-      if not ok then Print(reason or "View change refused") end
-    end
-    if updateSettingsOptions then updateSettingsOptions() end
-  end)
-  categoryChoice:SetWidth(390)
-  local manageCategories=MenuAction(contents,-1810,"Manage Categories  >",function()
-    ShowPage("categories")
-  end)
-  manageCategories:SetWidth(390)
-  local categoryNote=MakeLabel(contents,
-    "Manage Categories edits display order, matching priority, and custom rules.",
-    "GameFontHighlightSmall",{.64,.75,.82})
-  categoryNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1847)
-  Header(contents,"CATEGORY VIEW COLUMNS",-1880)
-  local categoryColumnText=MakeLabel(contents,"Category sections: 1 column",
-    "GameFontHighlightSmall",CYAN)
-  categoryColumnText:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1907)
-  local categoryColumnButtons={}
-  for n=1,4 do
-    local chosen=n
-    local b=MenuAction(contents,-1935,tostring(n).." column"..(n==1 and "" or "s"),function()
-      if controls.setCategoryColumns then
-        local ok,reason=controls.setCategoryColumns(chosen)
-        if not ok then Print(reason or "Unable to change category columns") end
-      end
-      if updateSettingsOptions then updateSettingsOptions() end
-    end)
-    b:SetWidth(96)
-    b:ClearAllPoints()
-    b:SetPoint("TOPLEFT",contents,"TOPLEFT",16+(n-1)*109,-1935)
-    categoryColumnButtons[#categoryColumnButtons+1]=b
-  end
-  advancedOptions[#advancedOptions+1]=function()
-    local current=controls.getCategoryColumns and controls.getCategoryColumns() or 1
-    categoryColumnText:SetText("Category sections: "..current.." column"..
-      (current==1 and "" or "s").."  (left to right, then down)")
-    for n,button in ipairs(categoryColumnButtons) do
-      if button and button.menuLabel then
-        button.menuLabel:SetText((n==current and "[X]  " or "[ ]  ")..
-          tostring(n))
-      end
-    end
-  end
-  local categoryLayoutNote=MakeLabel(contents,
-    "Each category stays in its own lane; the inventory expands horizontally.",
-    "GameFontHighlightSmall",{.64,.75,.82})
-  categoryLayoutNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1972)
-  advancedOptions[#advancedOptions+1]=function()
-    local mode=controls.getInventoryView and controls.getInventoryView() or "standard"
-    standardChoice.menuLabel:SetText((mode=="standard" and "[X]  " or "[ ]  ")..
-      "Standard (default)")
-    categoryChoice.menuLabel:SetText((mode=="category" and "[X]  " or "[ ]  ")..
-      "Category View")
-  end
-  contents:SetHeight(2070)
+  diagNote:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,-1665)
+  contents:SetHeight(2800)
   if NS.CategoryManager then
     NS.CategoryManager.Initialize(categoriesBody,{
       canEdit=function()
@@ -1424,6 +1636,9 @@ local function BuildOptions()
       end,
       onChange=function()
         if controls.requestRefresh then controls.requestRefresh() end
+        if NS.BankPanel and NS.BankPanel.RefreshPresentation then
+          NS.BankPanel.RefreshPresentation()
+        end
       end,
       receiveItemDrop=function(categoryID)
         if controls.receiveCategoryItemDrop then
@@ -1511,7 +1726,7 @@ SyncAppearanceOptions=function()
   if not opacitySlider then return end
   local mode=F.IsFancy() and "fancy" or "diagnostic"
   local value=Appearance(mode)
-  appearanceModeText:SetText(mode=="fancy" and "Fancy / Obsidian Arcanum" or "Diagnostic / red-gold")
+  appearanceModeText:SetText(mode=="fancy" and "Fancy / Obsidian Arcanum" or "Basic / Minimalist Skin")
   colorPatch:SetColorTexture(value.r,value.g,value.b,1)
   colorValueText:SetText(string.format("RGB %d, %d, %d",
     math.floor(value.r*255+.5),math.floor(value.g*255+.5),math.floor(value.b*255+.5)))
@@ -1600,6 +1815,7 @@ local function BuildFancy()
   -- It must NOT follow Search as inventory width/columns change.
   icons.key:SetPoint("TOPLEFT",surface,"TOPLEFT",12,-10)
   icons.character:SetPoint("TOPLEFT",icons.key,"TOPRIGHT",11,3)
+  if icons.gear then icons.gear.diagAltTexture = IconPath("BasicGear.tga") end
   -- Fixed bottom-left button. The six equipment slots live in an anchored
   -- pop-out, instead of permanently consuming footer space.
   bagButton=MakeButton(surface,"Equipped Bags",27,27,function()
@@ -1716,6 +1932,10 @@ function F.ToggleOptions()
   if not options then return end
   if options:IsShown() then options:Hide() else SyncOptions();options:Show() end
 end
+function F.OpenOptions()
+  if not options then return end
+  if not options:IsShown() then SyncOptions();options:Show() end
+end
 function F.SetSkin(mode)
   if mode~="diagnostic" and mode~="fancy" then return end
   if InCombat() then Print("Change UI skins after combat.");return end
@@ -1779,6 +1999,17 @@ function F.Apply()
   capacityText:SetShown(DB().showControls~=false)
   coinText:SetShown(DB().showControls~=false)
   if bagButton then bagButton:SetShown(DB().showControls~=false) end
+  if icons.key and icons.character then
+    icons.key:ClearAllPoints()
+    icons.character:ClearAllPoints()
+    if styled then
+      icons.key:SetPoint("TOPLEFT",surface,"TOPLEFT",12,-10)
+      icons.character:SetPoint("TOPLEFT",icons.key,"TOPRIGHT",11,3)
+    else
+      icons.key:SetPoint("TOPLEFT",surface,"TOPLEFT",12,-10)
+      icons.character:SetPoint("TOPLEFT",icons.key,"TOPRIGHT",11,0)
+    end
+  end
   controls.search:ClearAllPoints()
   controls.search:SetSize(208,22)
   -- Search remains anchored before Filter; the left Keyring control

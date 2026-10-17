@@ -92,7 +92,7 @@ function V.Render(name)
     prefs and prefs.Get(db,"bank","iconSize") or db.iconSize) or 35))
   local cell=iconSize+math.max(2,math.min(10,tonumber(
     prefs and prefs.Get(db,"bank","gridSpacing") or db.gridSpacing) or 4))
-  local cols=math.max(9,math.floor(tonumber(db.mainColumns) or 12))
+  local cols=math.max(9,math.floor(tonumber(db.mainColumns) or 10))
   local maxRows=math.ceil(#rows/cols)
   content:SetSize(math.max(1,cols*cell),math.max(1,maxRows*cell))
   for i=1,#rows do

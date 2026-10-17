@@ -14,6 +14,11 @@ local quickStats={started=0,completed=0,stopped=0,merges=0,last="none"}
 local splitFrameHooked=false
 local splitDiagnostic={native="none",source="none",cursor="none",samples=0,receiver="none"}
 local stats={merged=0,mergeStopped=0,splitPlaced=0,splitStopped=0,last="not attempted"}
+local function AnyPopoverOpen()
+  return (ns.StackPopover and ns.StackPopover.IsOpen and ns.StackPopover.IsOpen()) or
+    (ns.CombatStackPopover and ns.CombatStackPopover.IsOpen and
+      ns.CombatStackPopover.IsOpen()) or false
+end
 local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
 local function Say(s) print("|cff8ad9ffObsidian Bags:|r "..tostring(s)) end
 local function Safe(v) if issecretvalue and issecretvalue(v) then return nil end return v end
@@ -38,8 +43,7 @@ local function Bad(batchMerge,allowPopupCombat)
   if ns.PhysicalMove and ns.PhysicalMove.IsBusy and ns.PhysicalMove.IsBusy() then return "physical move is active" end
   if ns.AmmoTransfer and ns.AmmoTransfer.IsBusy and ns.AmmoTransfer.IsBusy() then return "ammo move is active" end
   if InCombatLockdown and InCombatLockdown() and not
-      (allowPopupCombat and ns.StackPopover and ns.StackPopover.IsOpen and
-        ns.StackPopover.IsOpen()) then return "combat" end
+      (allowPopupCombat and AnyPopoverOpen()) then return "combat" end
   if MerchantFrame and MerchantFrame.IsShown and MerchantFrame:IsShown() then return "merchant open" end
   if not C_Timer or not C_Timer.After then return "timer API unavailable" end
   if not C_Container or not C_Container.PickupContainerItem then return "container pickup API unavailable" end
@@ -188,7 +192,8 @@ function M.SplitDiagnostic()
     " samples="..splitDiagnostic.samples.." receiver="..splitDiagnostic.receiver..
     "; phase="..(split and split.phase or "none")..
     "; queued="..(split and (tostring(split.queuedSide)..":"..
-      tostring(split.queuedTarget and split.queuedTarget.visualIndex)) or "none")
+      tostring(split.queuedTarget and split.queuedTarget.visualIndex)) or "none")..
+    "; dialogLayer="..(M.NativeSplitDialogStatus and M.NativeSplitDialogStatus() or "unavailable")
 end
 function M.Status()
   return "Stacks: busy="..tostring(M.IsBusy()).." merge confirmed="..stats.merged..
@@ -457,6 +462,45 @@ function M.Preview(id,direction)
     " to "..req.dest.bagID..":"..req.dest.slotID.." x"..req.dest.count..
     " (max="..req.max..")"
 end
+-- Native Shift-click on the fully expanded combat inventory is Blizzard-owned;
+-- it does NOT call StackWork.OpenSplit and therefore bypasses the temporary
+-- dialog-layer lift below. Pre-arm Blizzard's existing split quantity frame
+-- while OUT OF COMBAT, before native item buttons can open it in lockdown.
+-- This changes only presentation; never wrap the native item OnClick or
+-- attempt SetFrameStrata/SetFrameLevel on a protected frame during combat.
+local nativeSplitLayer={ready=false,attempts=0,last="not prepared"}
+function M.PrepareNativeSplitDialog()
+  if InCombatLockdown and InCombatLockdown() then
+    nativeSplitLayer.last="deferred: combat"
+    return false,nativeSplitLayer.last
+  end
+  local frame=StackSplitFrame
+  if not frame or not frame.GetFrameLevel or not frame.SetFrameStrata or
+      not frame.SetFrameLevel then
+    nativeSplitLayer.last="Blizzard StackSplitFrame unavailable"
+    return false,nativeSplitLayer.last
+  end
+  nativeSplitLayer.attempts=nativeSplitLayer.attempts+1
+  local ok,err=pcall(function()
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(math.max(100,frame:GetFrameLevel() or 0))
+  end)
+  nativeSplitLayer.ready=ok
+  nativeSplitLayer.last=ok and "prepared FULLSCREEN_DIALOG before combat" or
+    ("preparation refused: "..tostring(err))
+  return ok,nativeSplitLayer.last
+end
+function M.NativeSplitDialogStatus()
+  local frame=StackSplitFrame
+  if not frame then return nativeSplitLayer.last end
+  local ok,strata,level=pcall(function()
+    return frame:GetFrameStrata(),frame:GetFrameLevel()
+  end)
+  return nativeSplitLayer.last.."; strata="..tostring(ok and strata or "unreadable")..
+    "; level="..tostring(ok and level or "unreadable")..
+    "; attempts="..nativeSplitLayer.attempts
+end
+
 -- The Blizzard dialog is a global frame. Temporarily lift it above our
 -- DIALOG-strata inventory windows, restoring its original presentation on hide.
 local splitDialogLayer
@@ -675,8 +719,7 @@ function M.OpenSplit(entry,index,owner,ownerSide)
   if not entry or not entry.itemID or type(entry.count)~="number" or entry.count<=1 then
     return false,"stack must contain at least two items"
   end
-  local allowPopupCombat=ownerSide=="popover" and ns.StackPopover and
-    ns.StackPopover.IsOpen and ns.StackPopover.IsOpen()
+  local allowPopupCombat=ownerSide=="popover" and AnyPopoverOpen()
   ownerSide=(ownerSide=="bank") and "bank" or "bag"
   local bad=Bad(false,allowPopupCombat)
   if bad then return false,bad end

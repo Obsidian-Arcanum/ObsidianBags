@@ -1,0 +1,49 @@
+OBSIDIAN BAGS v0.0.133 - Virtual Bank One Stack and Settings Consistency
+WoW Forever 1.60.1 / Interface 16001
+
+TEST CANDIDATE - not yet verified in the WoW Forever client.
+Rollback: retain the client-tested ObsidianBags v0.0.132 archive.
+
+BANK
+- Collapsed bank categories show unique item tiles, grouping duplicate
+  physical stacks visually without changing real bank contents.
+- Collapsed Available Slots retains one real physical empty destination.
+- Bank One Stack independently controls expanded Standard and Category views.
+- Multi-stack summary tiles show totals and open a bank-specific scrollable
+  physical-stack inspector.
+- Inspector rows: left-click reveals original physical buttons (disabling
+  Bank One Stack), right-click requests guarded quick-withdraw, shift-left
+  requests the existing guarded bank split dialog.
+- Summary tiles cannot be treated as deposit/merge targets or fake stacks.
+- A complete original-index provenance check still covers every bank slot.
+
+SETTINGS
+- Bank settings section is now BANK VIEW SETTINGS (no Virtual Bank wording).
+- Standard/Category size controls use the same wording, numeric entry widgets,
+  reset-to-10 / reset-to-6 actions as the carried inventory.
+- Bank Category View section columns offer the same 1/2/3/4 selectors.
+- Bank One Stack has its own switch and profile persistence.
+- Previously saved bank category lane widths below 6 use effective minimum 6.
+
+SLOT LABEL CLEANUP
+- No physical slot-index labels rendered in Fancy, Basic, combat-expanded,
+  or legacy read-only combat preview. Internal bank/slot IDs are preserved.
+- Secure combat frame architecture, binding and transaction engine unchanged.
+
+UNMODIFIED PHYSICAL SYSTEMS
+BankModel, CrossTransfer, StackWork, PhysicalMove, PhysicalBatch,
+ReagentTransfer, AmmoTransfer and secure combat binding modules.
+
+FOCUSED FOREVER CLIENT TESTS
+1. At banker, collapse categories and verify unique items remain, including
+   duplicate stack totals; expand back and verify original stacks return.
+2. Open an aggregate inspector; check rows/counts; left-reveal a physical
+   stack, then try a small right-click withdrawal and shift-left split.
+3. Test Bank One Stack independently in Standard and Category View; verify
+   transfers, empty bank deposit destinations, and search.
+4. Try 1/2/3/4 bank category columns, numeric slot widths, both reset buttons,
+   settings persistence across reload and the Basic theme.
+5. Enter/exit combat with carried bags and toggle/collapse in both themes:
+   no physical slot-index labels should appear.
+6. If anything odd happens, capture /vb bank status, /vb stack debug and
+   /vb transfer trace show, and keep the exact screenshot/reproduction.

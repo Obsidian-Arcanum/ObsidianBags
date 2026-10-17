@@ -6,7 +6,7 @@ ns.BankPanel = {}
 local P = ns.BankPanel
 local M = ns.BankModel
 local panel,scroll,child,status,diagnostic,searchBox
-local bankHeader,bankSummary
+local bankHeader,bankSummary,bankViewToggle
 local buttons = {}
 local rows,shownEntries,physicalFingerprint = {},{},nil
 -- A live scan is not a rendered bank. Track them separately: external
@@ -45,6 +45,7 @@ local function Database()
   return VirtualBagsLabDB
 end
 local function BankCollapsed() return Database().collapseBank==true end
+local function BankView() return Database().bankView=="category" and "category" or "standard" end
 local function Text(parent,value,font,color)
   local label=parent:CreateFontString(nil,"OVERLAY",font or "GameFontNormal")
   if color then label:SetTextColor(color[1],color[2],color[3]) end
@@ -528,6 +529,7 @@ Paint=function(button,token,entry)
 end
 RefreshDisplay=function()
   if not child or not scroll or not panel then return false end
+  if ns.BankStackPopover then ns.BankStackPopover.Hide() end
   local db=Database()
   local prefs=ns.PanelPreferences
   local size=math.max(30,math.min(42,math.floor((tonumber(
@@ -535,19 +537,17 @@ RefreshDisplay=function()
   local gap=math.max(2,math.min(10,math.floor((tonumber(
     prefs and prefs.Get(db,"bank","gridSpacing") or db.gridSpacing) or 4)+.5)))
   SIZE,SPACE=size,size+gap
-  COLUMNS=math.max(9,math.floor(tonumber(db.mainColumns) or 12))
+  COLUMNS=math.max(9,math.floor(tonumber(db.bankStandardColumns or db.mainColumns) or 10))
   local cols=COLUMNS
-  local collapsed=BankCollapsed()
-  local headerHeight=20
+  local isCategory=BankView()=="category"
+  local collapsed=not isCategory and BankCollapsed()
   local layout=M.GetLayout()
-  -- Every button retains its ORIGINAL virtual index, token and physical bank
-  -- slot address even when the on-screen grid is compressed.
+  -- Every button still owns its ORIGINAL visual index and token. Category
+  -- presentation can move that button on screen, but cannot rebind it.
   EnsureButtons(#rows)
   local blanks={}
   for _,entry in ipairs(rows) do if not entry.itemID then blanks[#blanks+1]=entry end end
   local empty=1
-  local visible=0
-  local firstBlank=false
   for i,button in ipairs(buttons) do
     if i<=#rows then
       button.index=i
@@ -555,45 +555,315 @@ RefreshDisplay=function()
       local e=token~=false and shownEntries[token] or nil
       if not e then e=blanks[empty];empty=empty+1 end
       Paint(button,token,e)
-      local show=not collapsed or (e and e.itemID)
-      if collapsed and not show and not firstBlank and e and not e.itemID then
-        show=true;firstBlank=true
-      end
-      if show then
-        visible=visible+1
-        local displayIndex=collapsed and visible or i
-        button:SetSize(SIZE,SIZE)
-        button:ClearAllPoints()
-        button:SetPoint("TOPLEFT",child,"TOPLEFT",((displayIndex-1)%cols)*SPACE,
-          -headerHeight-math.floor((displayIndex-1)/cols)*SPACE)
-        button:Show()
-      else button:Hide() end
     else button:Hide() end
   end
-  local rowsVisible=math.ceil(math.max(1,visible)/cols)
-  local contentHeight=headerHeight+rowsVisible*SPACE
-  local w=math.max(415,cols*SPACE+29)
-  local h=48+contentHeight+51
-  local maxHeight=math.max(155,(UIParent:GetHeight() or h)-32)
+  local visible,contentHeight,contentWidth=0,20,cols*SPACE
+  if isCategory then
+    local adapter=ns.BankCategoryView
+    if not adapter then return false end
+    local descriptors,sections,why,coverage=adapter.Build(layout,shownEntries,rows,
+      db.bankCategoryCollapsed,db.bankOneStack==true,db.bankItems)
+    if not descriptors then
+      last="bank Category View refused: "..tostring(why)
+      return false
+    end
+    local plan,planError=adapter.Plan(descriptors,sections,
+      P.GetCategorySlotColumns(),SPACE,db.bankCategoryColumns or 2,
+      UIParent and UIParent.GetWidth and UIParent:GetWidth())
+    if not plan then
+      last="bank Category View geometry refused: "..tostring(planError)
+      return false
+    end
+    local seen={}
+    for _,descriptor in ipairs(coverage or {}) do
+      local i=descriptor.originalIndex
+      local button=buttons[i]
+      if not button or seen[i] or button.entry~=descriptor.entry or
+          button.token~=descriptor.token then
+        last="bank Category View original-index mapping mismatch: "..tostring(i)
+        return false
+      end
+      seen[i]=true
+    end
+    if (function() local n=0; for _ in pairs(seen) do n=n+1 end; return n end)()~=#rows then
+      last="bank Category View physical slot coverage mismatch";return false
+    end
+    -- Commit a complete, validated presentation only after every real
+    -- physical stack and real blank has exactly one original-index target.
+    for i,button in ipairs(buttons) do
+      local xy=plan.points[i]
+      button:SetSize(SIZE,SIZE)
+      button:ClearAllPoints()
+      if xy then
+        button:SetPoint("TOPLEFT",child,"TOPLEFT",xy.x,-xy.y)
+        button:Show()
+        visible=visible+1
+      else
+        -- A hidden physical stack is NOT an actionable, on-screen tile.
+        button:Hide()
+      end
+    end
+    contentHeight=plan.height
+    contentWidth=plan.width
+    adapter.ShowHeaders(child,plan,P.ToggleCategory)
+    adapter.ShowSummaries(child,plan,searchQuery)
+  else
+    if ns.BankCategoryView then ns.BankCategoryView.Hide() end
+    local oneStack=db.bankOneStack==true
+    if not oneStack then
+      -- Preserve the client-verified Standard renderer byte-for-byte in its
+      -- default OFF state, including the old occupied + one-empty collapse.
+      local firstBlank=false
+      for i,button in ipairs(buttons) do
+        if i<=#rows then
+          local e=button.entry
+          local show=not collapsed or (e and e.itemID)
+          if collapsed and not show and not firstBlank and e and not e.itemID then
+            show=true;firstBlank=true
+          end
+          if show then
+            visible=visible+1
+            local displayIndex=collapsed and visible or i
+            button:SetSize(SIZE,SIZE)
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT",child,"TOPLEFT",((displayIndex-1)%cols)*SPACE,
+              -20-math.floor((displayIndex-1)/cols)*SPACE)
+            button:Show()
+          else button:Hide() end
+        end
+      end
+    else
+      -- Standard Bank One Stack groups only REAL occupied descriptors.
+      -- Empty targets are always drawn from authoritative physical blanks.
+      local occupied,blanks,drawn={},{},{}
+      for i,button in ipairs(buttons) do
+        if i<=#rows then
+          local row={originalIndex=i,token=button.token,entry=button.entry,kind="bank"}
+          if button.entry and button.entry.itemID then
+            occupied[#occupied+1]=row
+          else
+            blanks[#blanks+1]=row
+          end
+          button:Hide()
+        end
+      end
+      local shown=ns.OneStack.Group(occupied,db.bankItems,"bank")
+      local drawBlank=collapsed and math.min(1,#blanks) or #blanks
+      for n=1,drawBlank do shown[#shown+1]=blanks[n] end
+      for n,descriptor in ipairs(shown) do
+        local x=((n-1)%cols)*SPACE
+        local y=20+math.floor((n-1)/cols)*SPACE
+        if descriptor.summary then
+          drawn[#drawn+1]={descriptor=descriptor,x=x,y=y,categoryID="standard"}
+        else
+          local button=buttons[descriptor.originalIndex]
+          button:SetSize(SIZE,SIZE)
+          button:ClearAllPoints()
+          button:SetPoint("TOPLEFT",child,"TOPLEFT",x,-y)
+          button:Show()
+          visible=visible+1
+        end
+      end
+      if ns.BankCategoryView then
+        ns.BankCategoryView.ShowSummaries(child,{summaries=drawn,cell=SPACE},searchQuery)
+      end
+      visible=#shown -- every drawn summary is a real visible item cell
+    end
+    contentHeight=20+math.ceil(math.max(1,visible)/cols)*SPACE
+  end
+  local w=math.max(415,contentWidth+29)
+  -- Fixed-size Fancy corners need vertical clearance when every category
+  -- collapses to a header. Preserve scrollability on short displays.
+  local h=math.max(195,48+contentHeight+51)
+  local maxHeight=math.max(195,(UIParent:GetHeight() or h)-32)
   if panel and not (panel.labBackgroundDragging or (InCombatLockdown and InCombatLockdown())) then
     panel:SetSize(w,math.min(h,maxHeight))
   end
-  child:SetWidth(cols*SPACE+1)
+  child:SetWidth(contentWidth+1)
   child:SetHeight(contentHeight)
   if scroll.UpdateScrollChildRect then scroll:UpdateScrollChildRect() end
   local maxScroll=math.max(0,child:GetHeight()-(scroll:GetHeight() or 0))
   if (scroll:GetVerticalScroll() or 0)>maxScroll then scroll:SetVerticalScroll(maxScroll) end
   if bankHeader then
+    bankHeader:SetShown(not isCategory)
     bankHeader.text:SetText("BANK")
     if bankHeader.arrow then
       bankHeader.arrow:SetTexture("Interface\\AddOns\\ObsidianBags\\Media\\Fancy\\"..
         (collapsed and "TriangleRight" or "TriangleDown")..".tga")
     end
   end
+  if bankViewToggle then
+    bankViewToggle:SetText(isCategory and "Category View" or "Standard View")
+  end
   if bankSummary then bankSummary:Hide() end
   SetStatus()
   if ns.BankSkin and ns.BankSkin.Apply then ns.BankSkin.Apply() end
   return true
+end
+
+-- Bank category collapse is only a rendering change. Physical tokens and
+-- bank slot mapping remain untouched, including when everything is collapsed.
+function P.ToggleCategory(id)
+  if type(id)~="string" or not SafeToEdit() or bankDragSession or
+      externalDeposit or splitDropCallback or
+      (ns.StackWork and ns.StackWork.BlocksReconcile and ns.StackWork.BlocksReconcile()) then
+    return false
+  end
+  local db=Database()
+  if type(db.bankCategoryCollapsed)~="table" then db.bankCategoryCollapsed={} end
+  local previous=db.bankCategoryCollapsed[id]
+  db.bankCategoryCollapsed[id]=not (previous==true)
+  if not RefreshDisplay() then
+    db.bankCategoryCollapsed[id]=previous
+    RefreshDisplay()
+    return false
+  end
+  selected=nil -- Do not leave a hidden source selected after collapsing.
+  if ns.Profiles then ns.Profiles.Capture() end
+  return true
+end
+
+-- Independent bank geometry choices can be configured even while the banker
+-- is closed. They may not move live hit targets under a cursor/transaction.
+local function ConfigureGeometry(key,value,minimum,maximum,fallback)
+  if not MouseIsClear() or (InCombatLockdown and InCombatLockdown()) or
+      dragging or bankDragSession or externalDeposit or splitDropCallback or
+      (ns.CrossTransfer and ns.CrossTransfer.IsBusy and ns.CrossTransfer.IsBusy()) or
+      (ns.StackWork and ns.StackWork.BlocksReconcile and ns.StackWork.BlocksReconcile()) or
+      (ns.PhysicalMove and ns.PhysicalMove.IsBusy and ns.PhysicalMove.IsBusy()) or
+      (ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy()) then
+    return false,"Finish combat, bank drag, cursor or physical transaction first."
+  end
+  local db=Database()
+  local desired=math.max(minimum,math.min(maximum,math.floor(tonumber(value) or fallback)))
+  if db[key]==desired then return true end
+  local previous=db[key]
+  db[key]=desired
+  if panel and panel:IsShown() and #rows>0 and not RefreshDisplay() then
+    db[key]=previous
+    RefreshDisplay()
+    return false,"Could not safely render requested bank geometry."
+  end
+  selected=nil -- Geometry changes must not leave a stale click-selection.
+  if ns.Profiles then ns.Profiles.Capture() end
+  return true
+end
+function P.SetStandardColumns(n) return ConfigureGeometry("bankStandardColumns",n,9,18,10) end
+function P.SetCategoryColumns(n) return ConfigureGeometry("bankCategoryColumns",n,1,4,2) end
+function P.SetCategorySlotColumns(n) return ConfigureGeometry("bankCategorySlotColumns",n,6,16,6) end
+function P.GetStandardColumns() return Database().bankStandardColumns or Database().mainColumns or 10 end
+function P.GetCategoryColumns() return Database().bankCategoryColumns or 2 end
+function P.GetCategorySlotColumns() return math.max(6,math.min(16,
+  tonumber(Database().bankCategorySlotColumns) or 6)) end
+function P.GetOneStack() return Database().bankOneStack==true end
+function P.SetOneStack(value)
+  if not MouseIsClear() or (InCombatLockdown and InCombatLockdown()) or
+      bankDragSession or externalDeposit or splitDropCallback or dragging or
+      (ns.CrossTransfer and ns.CrossTransfer.IsBusy and ns.CrossTransfer.IsBusy()) or
+      (ns.StackWork and ns.StackWork.IsBusy and ns.StackWork.IsBusy()) or
+      (ns.PhysicalMove and ns.PhysicalMove.IsBusy and ns.PhysicalMove.IsBusy()) then
+    return false,"Finish bank, cursor or physical transactions before changing Bank One Stack."
+  end
+  local db=Database()
+  local old=db.bankOneStack
+  db.bankOneStack=value==true
+  if panel and panel:IsShown() and #rows>0 and not RefreshDisplay() then
+    db.bankOneStack=old
+    RefreshDisplay()
+    return false,"Bank One Stack could not be displayed safely."
+  end
+  selected=nil
+  if ns.Profiles then ns.Profiles.Capture() end
+  return true
+end
+
+
+-- A summary tile contains multiple REAL physical stacks; it can never be
+-- used as a merge/deposit target. Inspector rows may call these guarded
+-- bank-specific handlers only after identity and original-token verification.
+function P.SummarySourceAction(source,categoryID,action,owner)
+  if not source or type(source.originalIndex)~="number" or
+      not source.entry or not SafeToEdit() or bankDragSession or
+      externalDeposit or splitDropCallback then
+    return false,"Bank inspector source or transaction state is unavailable."
+  end
+  local index=source.originalIndex
+  local button=buttons[index]
+  local expected=source.entry
+  local current=button and button.entry
+  if not current or not button or button.token~=source.token or
+      M.GetLayout()[index]~=source.token or
+      current.bagID~=expected.bagID or current.slotID~=expected.slotID or
+      current.itemID~=expected.itemID or current.count~=expected.count or
+      (expected.link and current.link~=expected.link) or
+      (expected.guid and current.guid~=expected.guid) then
+    return false,"Bank inspector source changed; reopen the stacks."
+  end
+  if action=="withdraw" then
+    QuickWithdraw(button,index)
+    return true
+  elseif action=="split" then
+    if (current.count or 0)<2 then return false,"This physical stack cannot be split." end
+    if not ns.StackWork or not ns.StackWork.OpenSplit then
+      return false,"Stack split engine unavailable."
+    end
+    return ns.StackWork.OpenSplit(current,index,owner or button,"bank")
+  elseif action=="reveal" then
+    local db=Database()
+    local category=BankView()=="category"
+    local previousCollapse=db.bankCategoryCollapsed and db.bankCategoryCollapsed[categoryID]
+    local previousStack=db.bankOneStack
+    if category then
+      if type(db.bankCategoryCollapsed)~="table" then db.bankCategoryCollapsed={} end
+      db.bankCategoryCollapsed[categoryID]=false
+    end
+    db.bankOneStack=false
+    if not RefreshDisplay() then
+      if category then db.bankCategoryCollapsed[categoryID]=previousCollapse end
+      db.bankOneStack=previousStack
+      RefreshDisplay()
+      return false,"Unable to reveal the physical bank source."
+    end
+    selected=nil
+    if ns.Profiles then ns.Profiles.Capture() end
+    return true
+  end
+  return false,"Unknown bank inspector action."
+end
+
+-- Bank view is presentation-only. Switching is refused while a cursor,
+-- bank drag, split, or physical transaction could invalidate hit targets.
+function P.SetView(view)
+  if view~="standard" and view~="category" then return false end
+  if not SafeToEdit() or bankDragSession or externalDeposit or splitDropCallback then return false end
+  if BankView()==view then return true end
+  local db=Database()
+  local previous=db.bankView
+  db.bankView=view
+  if not RefreshDisplay() then
+    db.bankView=previous
+    RefreshDisplay()
+    return false
+  end
+  selected=nil
+  if scroll then scroll:SetVerticalScroll(0) end
+  if ns.Profiles then ns.Profiles.Capture() end
+  return true
+end
+function P.GetView() return BankView() end
+-- Shared category editing changes the live bank display only. Never force
+-- an unsanctioned bank physical transaction or reflow under a held cursor.
+local categoryPresentationDirty=false
+function P.RefreshPresentation()
+  if not panel or not panel:IsShown() then return false end
+  if not SafeToEdit() or bankDragSession or externalDeposit or splitDropCallback then
+    categoryPresentationDirty=true
+    return false
+  end
+  local rendered=RefreshDisplay()
+  if rendered then selected=nil end
+  categoryPresentationDirty=not rendered
+  return rendered
 end
 
 -- The scanner may be called by the global settings and bank event paths
@@ -605,6 +875,11 @@ end
 local function AnyBankSlotVisible()
   for _,button in ipairs(buttons) do
     if button:IsShown() then return true end
+  end
+  if ns.BankCategoryView and ns.BankCategoryView.HasVisibleHeader and
+      ns.BankCategoryView.HasVisibleHeader() and
+      (BankView()=="category" or Database().bankOneStack==true) then
+    return true
   end
   return false
 end
@@ -885,6 +1160,27 @@ local function Build()
   if ns.SlotArt then ns.SlotArt.Apply(bankSummary) end
   bankSummary:EnableMouse(false)
   bankSummary:Hide()
+  -- Independent bank view toggle: no saved bank token/layout mutation.
+  -- Kept in the bottom-right, clear of the bank tabs and shared search.
+  bankViewToggle=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
+  bankViewToggle:SetSize(119,23)
+  bankViewToggle:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-13,10)
+  bankViewToggle:SetText("Standard View")
+  bankViewToggle:SetScript("OnClick",function()
+    if not P.SetView(BankView()=="standard" and "category" or "standard") then
+      last="finish the bank/cursor action before switching views"
+      SetStatus()
+    end
+  end)
+  bankViewToggle:SetScript("OnEnter",function(self)
+    GameTooltip:SetOwner(self,"ANCHOR_TOP")
+    GameTooltip:SetText("Switch Virtual Bank view")
+    GameTooltip:AddLine("Standard keeps saved bank order; Category groups real bank slots by shared category rules.",.72,.83,1,true)
+    GameTooltip:Show()
+  end)
+  bankViewToggle:SetScript("OnLeave",function(self)
+    if GameTooltip and GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+  end)
   status=Text(panel,"Bank: initializing live scan","GameFontHighlightSmall",{.74,.83,.91})
   status:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",16,17)
   panel:SetScript("OnHide",function()
@@ -941,6 +1237,7 @@ local function Poll()
       -- An offline cached bank must never be treated as a live bank view.
       selected=nil
       bankDragSession=nil
+      if ns.BankStackPopover then ns.BankStackPopover.Hide() end
       if ns.MainPanel and ns.MainPanel.EndBankDrag then ns.MainPanel.EndBankDrag() end
       EndGhost()
       physicalFingerprint=nil
@@ -981,10 +1278,16 @@ local watcher=CreateFrame("Frame")
 for _,event in ipairs({"BANKFRAME_OPENED","BANKFRAME_CLOSED",
   "PLAYER_INTERACTION_MANAGER_FRAME_SHOW","PLAYER_INTERACTION_MANAGER_FRAME_HIDE",
   "PLAYERBANKSLOTS_CHANGED","BANK_TABS_CHANGED","BAG_UPDATE_DELAYED",
-  "GET_ITEM_INFO_RECEIVED"}) do
+  "GET_ITEM_INFO_RECEIVED","DISPLAY_SIZE_CHANGED","UI_SCALE_CHANGED"}) do
   watcher:RegisterEvent(event)
 end
 watcher:SetScript("OnEvent",function(_,event)
+  if event=="DISPLAY_SIZE_CHANGED" or event=="UI_SCALE_CHANGED" then
+    -- Only presentation needs new screen constraints; never rescan or run a
+    -- bank transaction solely because resolution/UI scale changed.
+    if open and panel and panel:IsShown() then P.RefreshPresentation() end
+    return
+  end
   -- Item names/icons may become cached after the physical bank snapshot.
   if event=="GET_ITEM_INFO_RECEIVED" and open and panel and panel:IsShown() then
     if C_Timer and C_Timer.After then
@@ -999,7 +1302,11 @@ end)
 local elapsed=0
 watcher:SetScript("OnUpdate",function(_,dt)
   elapsed=elapsed+dt
-  if elapsed>=.4 then elapsed=0;Poll() end
+  if elapsed>=.4 then
+    elapsed=0
+    Poll()
+    if categoryPresentationDirty then P.RefreshPresentation() end
+  end
 end)
 -- Bank stack splitting: temporary, addon-owned receiver with NO native
 -- bank pickup on a click. It is visible only while a split REAL cursor is held.
@@ -1163,7 +1470,9 @@ function P.Command(command,Message)
       "; cross attempts="..crossDropAttempts.." ready="..crossDropReady..
       " rejected="..crossDropRejected.."; right-click withdraw attempted="..quickAttempts..
       " prepared="..quickPrepared.." refused="..quickRefused..
-      "; mode="..M.GetKind().."; last="..last.."; bank transfers handled by coordinator")
+      "; mode="..M.GetKind().."; view="..BankView()..
+      "; bankOneStack="..tostring(Database().bankOneStack==true)..
+      "; last="..last.."; bank transfers handled by coordinator")
     return true
   elseif command=="bank refresh" then
     if P.Refresh(true) then Message("Virtual bank refreshed; saved visual order retained")

@@ -8,6 +8,7 @@ function ns.CommandHelp.Show(Message, unknown)
     Message("Obsidian Bags commands (also /vbag and /vbl):")
   end
   Message("UI skins: /vb skin fancy | /vb skin diagnostic | /vb skin status (per character). Fancy gear opens options and diagnostic shortcuts.")
+  Message("New aliases: /obags or /obsidianbags = Settings; /obags open = open bags; /obags toggle = toggle bags; /vb = legacy bag toggle.")
   Message("Window: /vb (toggle) | /vb sort (visual + auto physical) | /vb sort preview (read-only) | /vb sort status|log | /vb keyring [status] | /vb physical | /vb refresh | /vb organize | /vb reset")
   Message("Selling: Alt+LEFT-click item = SELL mark | /vb sell status | /vb sell diag on|off | /vb sell log | /vb junk status")
   Message("Bag sync: /vb sync status | /vb link status | /vb diag | /vb drop status | /vb ammo status | /vb reagent status")

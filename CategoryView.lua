@@ -8,6 +8,7 @@ ns.CategoryView = {}
 local C = ns.CategoryView
 local pane, readDB, requestRefresh
 local labels, arrows, summaryTiles = {}, {}, {}
+local lastFullFree = {}
 local SECTION_GAP = 24
 local DOWN = "Interface\\AddOns\\ObsidianBags\\Media\\Fancy\\TriangleDown.tga"
 local RIGHT = "Interface\\AddOns\\ObsidianBags\\Media\\Fancy\\TriangleRight.tga"
@@ -108,7 +109,7 @@ end
 
 -- Identical underlying token/real-blank data path as v0.0.116. The only
 -- optional mutation is NONE: the DB is read for presentation flags only.
-function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap)
+function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap,forceExpanded)
   local buckets,free={},{}
   local defs=ns.CategoryClassifier and ns.CategoryClassifier.Definitions() or
     {{id="misc",label="UNCATEGORIZED"}}
@@ -153,8 +154,8 @@ function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap)
     local bucket=buckets[def.id]
     if bucket and #bucket>0 then
       table.sort(bucket,PhysicalOrder)
-      local collapsed=Collapsed(def.id)
-      local shown=(collapsed or DB().oneStack==true) and Summarize(bucket,def.id) or bucket
+      local collapsed=not forceExpanded and Collapsed(def.id) or false
+      local shown=(not forceExpanded and (collapsed or DB().oneStack==true)) and Summarize(bucket,def.id) or bucket
       sections[#sections+1]={id=def.id,label=def.label,count=#shown,
         originalCount=#bucket,collapsed=collapsed}
       for _,descriptor in ipairs(shown) do
@@ -163,11 +164,12 @@ function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap)
     end
   end
   table.sort(free,PhysicalOrder)
+  lastFullFree=free -- physical empty destinations BEFORE collapse reduction
   local occupiedCount=#descriptors
   if #free>0 then
     -- A collapsed empty-slot section still exposes ONE authoritative real
     -- slot. No fabricated blank target and no loss of actual bag capacity.
-    local collapsed=Collapsed("available")
+    local collapsed=not forceExpanded and Collapsed("available") or false
     local visibleFree=collapsed and 1 or #free
     sections[#sections+1]={id="available",label="AVAILABLE SLOTS",
       count=visibleFree,originalCount=#free,collapsed=collapsed}
@@ -252,6 +254,11 @@ function C.ShowHeaders(plan)
     arrow:ClearAllPoints()
     arrow:SetPoint("LEFT",fs,"RIGHT",4,0)
     arrow:Show()
+    -- Prepared drawer security MUST NOT interfere with this plain header
+    -- arrow's normal FontString anchoring and outside-combat click handler.
+    if header.id=="available" and ns.CombatAvailableSlots then
+      ns.CombatAvailableSlots.Prepare(arrow,lastFullFree)
+    end
   end
 end
 
@@ -311,7 +318,13 @@ local function SummaryTile(index)
 end
 
 function C.HideSummaries()
-  for _,tile in ipairs(summaryTiles) do tile:Hide() end
+  -- Cosmetic One Stack artwork must never peek through the expanded combat
+  -- canvas if a formerly secure-linked tile refuses a combat-time Hide.
+  local combat=InCombatLockdown and InCombatLockdown()
+  for _,tile in ipairs(summaryTiles) do
+    if combat then pcall(tile.SetAlpha,tile,0) end
+    pcall(tile.Hide,tile)
+  end
 end
 
 function C.ShowSummary(descriptor,x,y)
@@ -345,6 +358,26 @@ function C.ShowSummary(descriptor,x,y)
   local color=db.countFontColor or (defaults and defaults.color) or {1,1,1,1}
   tile.quantity:SetTextColor(color[1] or 1,color[2] or 1,color[3] or 1,color[4] or 1)
   tile:Show()
+  if ns.CombatStackPopover then ns.CombatStackPopover.Prepare(tile,descriptor) end
+end
+
+-- Used only by the split-stack background receiver. The receiver is laid
+-- over the whole inventory during an active split, so normal UI hit-testing
+-- cannot see the summary/section header underneath. Never interpret an item
+-- summary or header click as a "blank background" deposit request.
+function C.HitInteractiveCategory(x,y)
+  if type(x)~="number" or type(y)~="number" then return false end
+  local function Inside(frame)
+    if not frame or not frame.IsShown or not frame:IsShown() then return false end
+    local l,r,t,b=frame:GetLeft(),frame:GetRight(),frame:GetTop(),frame:GetBottom()
+    return type(l)=="number" and type(r)=="number" and
+      type(t)=="number" and type(b)=="number" and
+      x>=l and x<=r and y>=b and y<=t
+  end
+  for _,tile in ipairs(summaryTiles) do if Inside(tile) then return true end end
+  for _,arrow in ipairs(arrows) do if Inside(arrow) then return true end end
+  for _,label in ipairs(labels) do if Inside(label) then return true end end
+  return false
 end
 
 function C.SearchSummaries(query)

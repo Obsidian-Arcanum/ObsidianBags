@@ -62,7 +62,7 @@ local lastLootToBagMs, awaitingLootBagEvent = nil, false
 -- Low-cost drift detection for dropped/coalesced update events. A live-slot
 -- fingerprint is compared against the LAST SUCCESSFUL render, not against the
 -- previous check. This cannot silently accept a stale layout as the baseline.
-local liveSync = {interval = .40, elapsed = 0, bankElapsed = 0, rendered = nil, checks = 0,
+local liveSync = {interval = .40, elapsed = 0, bankElapsed = 0, rendered = nil, combatObserved = nil, checks = 0,
   mismatches = 0, recoveryRequests = 0, bagCallbacks = 0,
   ignoredBagCallbacks = 0, delayedCallbacks = 0, lootCallbacks = 0,
   syndicatorCallbacks = 0, syndicatorMatched = 0,
@@ -192,7 +192,9 @@ local function UpdateStatus(label)
       (searchPending > 0 and (", " .. tostring(searchPending) .. " pending") or "")
   end
   if InCombat() then
-    extra = "  |cffffc66d(combat: live read-only preview; native slots unchanged)|r"
+    extra = NS.CombatExpanded and NS.CombatExpanded.Ready() and
+      "  |cffffc66d(combat: expanded native inventory)|r" or
+      "  |cffffc66d(combat: native slots active; visual layout frozen)|r"
   end
   local markedCount = 0
   for _, record in pairs(db.items or {}) do
@@ -986,6 +988,33 @@ local function QueuePickupCommit(session, destination, started)
           Message("Category assignment cancelled: "..tostring(reason))
         end
       end
+      -- v0.0.129b: Category View and One Stack inspector can request an
+      -- EXACT physical occupied-stack target. Never mutate visual ordering.
+      -- Only start this worker after the original native cursor has returned
+      -- to its source and the asynchronous return verifier has succeeded.
+      if session.mergeTarget and not InCombat() then
+        local targetRequest=session.mergeTarget
+        C_Timer.After(0,function()
+          local db=GetDB()
+          local source=viewEntries[session.token]
+          local target=viewEntries[targetRequest.token]
+          local function Same(entry,expected)
+            return entry and expected and entry.itemID==expected.itemID and
+              entry.bagID==expected.bagID and entry.slotID==expected.slotID and
+              entry.link==expected.link and entry.count==expected.count
+          end
+          if not Same(source,session) or not Same(target,targetRequest) or
+              not NS.StackWork or not NS.StackWork.MergeTargeted then
+            Message("Exact stack merge cancelled: source or chosen target changed.")
+            return
+          end
+          local srcMarked=db.items and db.items[session.token] and
+            db.items[session.token].junk==true or false
+          local dstMarked=db.items and db.items[targetRequest.token] and
+            db.items[targetRequest.token].junk==true or false
+          NS.StackWork.MergeTargeted(source,target,"bag-to-bag",srcMarked,dstMarked)
+        end)
+      end
       if session.crossBankTarget and NS.CrossTransfer and
           NS.CrossTransfer.PrepareFromBag then
         local source=viewEntries[session.token]
@@ -1052,13 +1081,17 @@ FinishNativePickupTrial = function(route)
   -- its settings window visually overlaps Virtual Bags beneath it.
   local categoryTarget=NS.CategoryManager and
     NS.CategoryManager.DropTargetAt and NS.CategoryManager.DropTargetAt(x,y) or nil
-  local inside = not categoryTarget and InVirtualWindow(x, y)
+  -- Inspect the physical One Stack destination before testing the main
+  -- window. Popup buttons are genuine item slots, not aggregate icons.
+  local popupTarget=not categoryTarget and NS.StackPopover and
+    NS.StackPopover.GetDropTargetAt and NS.StackPopover.GetDropTargetAt(x,y) or nil
+  local inside = not categoryTarget and not popupTarget and InVirtualWindow(x, y)
   local destination = inside and FindDropIndex() or nil
   TraceInteraction("pickup-trial-release", nil, tostring(route) .. " inside=" ..
     tostring(inside) .. " cell=" .. tostring(destination))
-  local bankTarget = not inside and not categoryTarget and NS.BankPanel and
+  local bankTarget = not inside and not popupTarget and not categoryTarget and NS.BankPanel and
     NS.BankPanel.GetCrossTarget and NS.BankPanel.GetCrossTarget() or nil
-  if not inside and not bankTarget and not categoryTarget then
+  if not inside and not popupTarget and not bankTarget and not categoryTarget then
     pickupTrial.external = pickupTrial.external + 1
     -- Outside either virtual inventory: preserve normal native physical
     -- cursor action bars, equipment, and world drop behavior.
@@ -1083,6 +1116,41 @@ FinishNativePickupTrial = function(route)
       NS.CrossTransfer.TraceDrag("carried-bank-release", "bank visual cell="..
         bankTarget.visualIndex.." route="..tostring(route))
     end
+  end
+  -- Category placement is immutable, but matching partial physical stacks
+  -- are legitimate destinations. Select by the actual token/physical slot,
+  -- not an itemID-only aggregate or whichever stack happens to be first.
+  local targetToken,targetEntry
+  if popupTarget then
+    targetToken,targetEntry=popupTarget.token,popupTarget.entry
+  elseif inside and destination and NS.CategoryView and
+      NS.CategoryView.IsActive(GetDB()) then
+    targetToken=GetDB().layout and GetDB().layout[destination]
+    targetEntry=targetToken and targetToken~=false and viewEntries[targetToken] or nil
+  end
+  if targetEntry and targetToken~=session.token and
+      NS.StackWork and NS.StackWork.MatchesTarget and
+      NS.StackWork.MatchesTarget(session,targetEntry) then
+    local db=GetDB()
+    local sourceMarked=db.items and db.items[session.token] and
+      db.items[session.token].junk==true or false
+    local targetMarked=db.items and db.items[targetToken] and
+      db.items[targetToken].junk==true or false
+    local allowed,why=NS.StackWork.SellMergeAllowed("bag-to-bag",sourceMarked,targetMarked)
+    if not allowed then
+      Message("Exact stack merge refused: "..tostring(why))
+    else
+      session.mergeTarget={token=targetToken,itemID=targetEntry.itemID,
+        bagID=targetEntry.bagID,slotID=targetEntry.slotID,
+        link=targetEntry.link,count=targetEntry.count}
+      TraceInteraction("exact-stack-merge-target",nil,
+        tostring(targetEntry.bagID)..":"..tostring(targetEntry.slotID))
+    end
+  elseif popupTarget then
+    -- Do not consume a nonmatching/unknown physical cursor on an inspector.
+    -- Outside-window drops otherwise belong to Blizzard; leave cursor held.
+    EndPickupTrial("popover target not an identical physical stack; cursor untouched")
+    return
   end
   local sourceOK, sourceReason = CheckPickupSource(session)
   local cursorOK, cursorReason = CursorStillMatchesSession(session)
@@ -1344,7 +1412,12 @@ end
 
 local function CreateWindow()
   if window then return end
-  window = CreateFrame("Frame", "ObsidianBagsWindow", UIParent, "BackdropTemplate")
+  -- The bag is the prebuilt secure view host. Restricted click/state snippets
+  -- must access IsShown/GetHeight/Show/SetHeight on an EXPLICITLY protected
+  -- frame handle; implicit protection from child item buttons is insufficient.
+  -- Keep the existing BackdropTemplate skin and all native item templates.
+  window = CreateFrame("Frame", "ObsidianBagsWindow", UIParent,
+    "BackdropTemplate,SecureFrameTemplate")
   window:SetSize(530, 455)
   window:SetFrameStrata("DIALOG")
   window:SetMovable(true)
@@ -1359,6 +1432,12 @@ local function CreateWindow()
   window:SetBackdropColor(.045, .055, .072, .97)
   window:SetBackdropBorderColor(.36, .52, .66, .95)
   window:Hide()
+  -- Prepare Blizzard's shared quantity dialog above this DIALOG-strata bag
+  -- before combat. Native Shift-click splits bypass our StackWork.OpenSplit
+  -- lift, and protected dialog strata cannot be changed during lockdown.
+  if NS.StackWork and NS.StackWork.PrepareNativeSplitDialog then
+    NS.StackWork.PrepareNativeSplitDialog()
+  end
 
   local db = GetDB()
   if NS.Profiles then NS.Profiles.Initialize(db) end
@@ -1537,6 +1616,17 @@ local function CreateWindow()
     local wheel = scroll:GetScript("OnMouseWheel")
     if wheel then wheel(scroll, delta) end
   end)
+  -- The two inventory canvases share THIS exact window, frame, and skin.
+  -- Their protected native buttons are never reparented or rebound in combat.
+  -- Keep the secure native-button layer separate from ordinary category
+  -- header arrows. Driving visibility on the WHOLE scroll frame would make
+  -- descendants protected and recreate the forbidden arrow->FontString anchor.
+  scrollChild.labNativeRoot=CreateFrame("Frame",nil,scrollChild)
+  scrollChild.labNativeRoot:SetAllPoints(scrollChild)
+  if NS.CombatExpanded then
+    NS.CombatExpanded.Initialize(window,scroll,GetDB,scrollChild.labNativeRoot)
+  end
+  if NS.CombatBagBinding then NS.CombatBagBinding.Initialize(window) end
   if NS.CombatPreview then NS.CombatPreview.Initialize(scrollChild) end
   if NS.SortProjection then NS.SortProjection.Initialize(scrollChild, buttonsBySlot) end
   statusText = PaintText(window, "", "GameFontHighlightSmall", {.74, .83, .91})
@@ -1566,6 +1656,27 @@ local function CreateWindow()
     local shiftChanged=shifted~=lastSplitModifier
     lastSplitModifier=shifted
     local altChanged=NS.JunkAudit and NS.JunkAudit.NeedsUpdate(IsAltKeyDown and IsAltKeyDown())
+    -- A click-pickup from a genuine Category View native item button may be
+    -- routed through the SAME provenance/return worker as native drag pickup.
+    -- The candidate must have been captured on that physical button's actual
+    -- left press, then observed holding its matching native item cursor.
+    local clicked=pickupTrial.clickCandidate
+    if clicked then
+      local age=Now()-clicked.started
+      if (not clicked.armed and age>.8) or age>10 or InCombat() or
+          not (NS.CategoryView and NS.CategoryView.IsActive(GetDB())) then
+        pickupTrial.clickCandidate=nil
+      elseif not pickupTrial.session and not pickupTrial.settling then
+        if not clicked.armed then
+          local matches=CursorStillMatchesSession(clicked)
+          if matches==true and not (IsMouseButtonDown and IsMouseButtonDown("LeftButton")) then
+            clicked.armed=true
+          end
+        elseif CursorEmpty() then
+          pickupTrial.clickCandidate=nil
+        end
+      end
+    end
     -- A click-pickup can place a real item on the cursor without OnDragStart.
     -- Track only the boolean transition while visible; never synthesize a
     -- cursor or intercept native clicks when the cursor is empty.
@@ -1635,23 +1746,40 @@ local function CreateWindow()
       setColumns=function(value)
         if InCombat() then return end
         local db=GetDB()
-        local actual=NS.BagGeometry and NS.BagGeometry.Constrain(value,mainCapacity) or 12
+        local actual=NS.BagGeometry and NS.BagGeometry.Constrain(value,mainCapacity) or 10
         if db.mainColumns~=actual then
           db.mainColumns=actual
           if NS.Profiles then NS.Profiles.Capture() end
           Lab:RequestRefresh(true)
         end
       end,
-      getColumns=function() return (GetDB().mainColumns or 12) end,
-      getCategoryColumns=function() return (GetDB().categoryColumns or 1) end,
+      getColumns=function() return (GetDB().mainColumns or 10) end,
+      getCategoryColumns=function() return (GetDB().categoryColumns or 2) end,
+      getCategorySlotColumns=function() return (GetDB().categorySlotColumns or 6) end,
+      getCategorySlotMaximum=function() return math.max(6,mainCapacity) end,
+      setCategorySlotColumns=function(value)
+        if InCombat() or PhysicalBusy() or pickupTrial.session or pickupTrial.settling or
+            dragging or externalSession or externalPickupActive or not CursorEmpty() then
+          return false,"Finish combat or an active item transaction before changing category width."
+        end
+        local desired=math.max(6,math.min(math.max(6,mainCapacity),
+          math.floor(tonumber(value) or 6)))
+        local db=GetDB()
+        if (db.categorySlotColumns or 6)~=desired then
+          db.categorySlotColumns=desired
+          if NS.Profiles then NS.Profiles.Capture() end
+          Lab:RequestRefresh(true)
+        end
+        return true
+      end,
       setCategoryColumns=function(value)
         if InCombat() or PhysicalBusy() or pickupTrial.session or pickupTrial.settling or
             dragging or externalSession or externalPickupActive or not CursorEmpty() then
           return false,"Finish combat or an active item transaction before changing category columns."
         end
-        local desired=math.max(1,math.min(4,math.floor(tonumber(value) or 1)))
+        local desired=math.max(1,math.min(4,math.floor(tonumber(value) or 2)))
         local db=GetDB()
-        if (db.categoryColumns or 1)~=desired then
+        if (db.categoryColumns or 2)~=desired then
           db.categoryColumns=desired
           if NS.Profiles then NS.Profiles.Capture() end
           Lab:RequestRefresh(true)
@@ -1732,7 +1860,7 @@ end
 local function GetBagParent(bagID)
   local parent = bagParents[bagID]
   if parent then return parent end
-  parent = CreateFrame("Frame", nil, scrollChild)
+  parent = CreateFrame("Frame", nil, scrollChild.labNativeRoot or scrollChild)
   parent:SetSize(1, 1)
   parent:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
   parent:SetID(bagID)
@@ -1766,11 +1894,13 @@ local function GetSlotButton(bagID, slotID)
   label:SetTextColor(.98, .84, .55)
   label:SetText(key)
   button.labPhysicalLabel = label
+  label:Hide() -- identifiers are internal diagnostics, never on-screen slot art
   local labelBackground = button:CreateTexture(nil, "ARTWORK")
   labelBackground:SetColorTexture(.02, .03, .04, .7)
   labelBackground:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
   labelBackground:SetPoint("BOTTOMRIGHT", label, "BOTTOMRIGHT", 2, -1)
   button.labLabelBackground = labelBackground
+  labelBackground:Hide()
   button:HookScript("OnEnter", function(self)
     if self.labSlotInfo and self.labSlotInfo.itemID and not GetDB().organize then
       UpdateStatus(" | " .. tostring(self:GetParent():GetID()) .. ":" .. tostring(self:GetID()))
@@ -1917,19 +2047,30 @@ local function GetSlotButton(bagID, slotID)
   button.labOrganizeOverlay = overlay
   -- ONLY while Category View has a real item cursor: an opaque mouse owner
   -- (visually transparent) prevents click-pickup-then-click-on-item from
-  -- invoking Blizzard's physical item swap. Never wrap native OnClick.
+  -- invoking Blizzard's physical item swap. In 0.0.129b it may accept a
+  -- verified popup-origin item merge, but never calls native OnClick.
   local categoryShield=CreateFrame("Button",nil,button)
   categoryShield:SetAllPoints(button)
   categoryShield:SetFrameLevel(button:GetFrameLevel()+9)
   categoryShield:EnableMouse(true)
   categoryShield:RegisterForClicks("AnyUp")
-  categoryShield:SetScript("OnReceiveDrag",function() end)
-  categoryShield:SetScript("OnClick",function() end)
+  local function ReceiveTrackedPopupMerge()
+    if InCombat() or not button.labSlotInfo or not button.labSlotInfo.itemID or
+        not NS.StackPopover or not NS.StackPopover.TryMergeHeld then return end
+    if NS.StackPopover.TryMergeHeld(button.labSlotInfo) then return end
+    if NS.MainPanel and NS.MainPanel.FinishCategoryClickPickup then
+      NS.MainPanel.FinishCategoryClickPickup()
+    end
+  end
+  categoryShield:SetScript("OnReceiveDrag",ReceiveTrackedPopupMerge)
+  categoryShield:SetScript("OnClick",function(_,mouseButton)
+    if mouseButton=="LeftButton" then ReceiveTrackedPopupMerge() end
+  end)
   categoryShield:SetScript("OnEnter",function(self)
     if GameTooltip then
       GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
       GameTooltip:SetText("Category View: item positions are fixed")
-      GameTooltip:AddLine("Drops onto occupied slots are disabled. Manage category membership in settings.",.75,.84,.94,true)
+      GameTooltip:AddLine("Identical physical stacks may merge here. Other occupied swaps stay disabled.",.75,.84,.94,true)
       GameTooltip:Show()
     end
   end)
@@ -1949,6 +2090,23 @@ local function GetSlotButton(bagID, slotID)
   junkText:SetText("SELL")
   junkText:Hide()
   button.labJunkText = junkText
+  -- Observe the source native mouse-down ONLY. Blizzard still owns its
+  -- protected OnClick; a later held cursor must be validated separately.
+  button:HookScript("OnMouseDown",function(self,mouseButton)
+    if mouseButton~="LeftButton" or InCombat() or not CursorEmpty() or
+        not (NS.CategoryView and NS.CategoryView.IsActive(GetDB())) or
+        (IsAltKeyDown and IsAltKeyDown()) or
+        (IsShiftKeyDown and IsShiftKeyDown()) or
+        pickupTrial.session or pickupTrial.settling then return end
+    local entry=self.labSlotInfo
+    local index,token=self.labVisualIndex,self.labToken
+    if not entry or not entry.itemID or not token or
+        GetDB().layout[index]~=token then return end
+    pickupTrial.clickCandidate={sourceIndex=index,token=token,
+      bagID=entry.bagID,slotID=entry.slotID,itemID=entry.itemID,
+      link=entry.link,count=entry.count,guid=entry.guid,
+      started=Now(),armed=false,finished=false}
+  end)
   buttonsBySlot[key] = button
   return button
 end
@@ -2297,18 +2455,25 @@ CheckLiveSync = function()
     liveSync.last = "live slot read unavailable; no action"
     return
   end
-  if liveSync.rendered == nil then
-    liveSync.last = "awaiting rendered baseline"
+  -- Native combat painting updates physical icons, but deliberately freezes
+  -- category layout and One Stack summaries. Never promote that snapshot to
+  -- the fully reconciled/rendered fingerprint; doing so hides stale layouts
+  -- from the watchdog after leaving combat.
+  local baseline = InCombat() and liveSync.combatObserved or liveSync.rendered
+  if baseline == nil then
+    liveSync.last = "awaiting " .. (InCombat() and "combat paint" or "rendered") .. " baseline"
     Lab:RequestRefresh(false)
     return
   end
-  if current ~= liveSync.rendered then
+  if current ~= baseline then
     if NS.SyncAudit and NS.SyncAudit.RecordDrift then
-      NS.SyncAudit.RecordDrift(liveSync.rendered, current,
+      NS.SyncAudit.RecordDrift(baseline, current,
         pendingRefresh, queuedRefresh, Now(), lastBagEvent, lastDelayedEvent)
     end
     liveSync.mismatches = liveSync.mismatches + 1
-    liveSync.last = "physical inventory differs from last render; refresh queued"
+    liveSync.last = InCombat() and
+      "physical inventory differs from last combat paint; refresh queued" or
+      "physical inventory differs from last render; refresh queued"
     liveSync.recoveryRequests = liveSync.recoveryRequests + 1
     Lab:RequestRefresh(false)
   end
@@ -3256,12 +3421,14 @@ local function PaintButton(button, entry)
     if button:IsMouseOver() and button.OnEnter then button:OnEnter() end
   end
 end
+-- Both display modes paint through this ONE native art/typography pipeline.
+NS.PaintNativeInventoryButton = PaintButton
 
 function Lab:Refresh()
   pendingRefresh = false
   if not window or not window:IsShown() then return end
-  -- Never leave the read-only combat shield covering usable native slots
-  -- after combat, even while waiting for a cursor/transaction to settle.
+  -- If an older mirror is still visible, release it out of combat.
+  -- Native combat presentation must never cover live secure item buttons.
   if not InCombat() and NS.CombatPreview then NS.CombatPreview.Hide() end
   if lastRefreshRequestAt then
     lastQueueLatencyMs = math.floor(math.max(0, Now() - lastRefreshRequestAt) * 1000 + .5)
@@ -3299,25 +3466,45 @@ function Lab:Refresh()
     return
   end
   if InCombat() then
-    -- Never display predictive, out-of-combat virtual slots over the
-    -- authoritative read-only combat mirror.
-    if NS.SortProjection then NS.SortProjection.Hide() end
-    -- No SetPoint/Show/Hide/creation on native secure item buttons in combat.
-    -- Instead paint a NONSECURE read-only mirror from live slot data and
-    -- preserve normal buttons' protected identity and hardware click paths.
+    -- 0.0.129: retain native interaction with already-displayed physical
+    -- bag/slot buttons. The former read-only mouse-blocking mirror covered
+    -- perfectly usable secure buttons and prevented item use and trading.
+    -- Never move, create, hide or rebind those buttons during lockdown.
+    -- The virtual arrangement remains frozen until PLAYER_REGEN_ENABLED.
     waitingForCombat=true
     local ok,reason=pcall(function()
       local entries,occupied,total,unstable=ReadSnapshot()
-      if unstable then pendingRefresh=true;lastStage='combat preview: locked live slot';return end
-      local blanks=Reconcile(entries)
+      if unstable then
+        pendingRefresh=true;lastStage='combat native: physical slot settling'
+        return
+      end
       lastOccupied,lastSlots=occupied,total
-      if NS.CombatPreview then NS.CombatPreview.Draw(viewLayout,viewEntries,
-        blanks,mainCapacity,ammoCapacity,reagentCapacity) end
+      if NS.CombatStackPopover then
+        pcall(NS.CombatStackPopover.CombatRefresh,entries)
+      end
+      if NS.CombatAvailableSlots then
+        pcall(NS.CombatAvailableSlots.CombatRefresh,entries)
+      end
+      if NS.CombatExpanded and NS.CombatExpanded.Ready() then
+        NS.CombatExpanded.HideLegacy()
+        local n,painted,skipped,errors=NS.CombatExpanded.Refresh(entries,GetDB().items)
+        lastStage='expanded combat: '..tostring(painted)..'/'..tostring(n)..
+          ' physical slots repainted; '..tostring(errors)..' cosmetic errors'
+      elseif NS.CombatNative then
+        local n,painted,skipped,errors=NS.CombatNative.Refresh(
+          buttonsBySlot,entries,GetDB().items)
+        lastStage='combat native: '..tostring(painted)..'/'..tostring(n)..
+          ' active slots refreshed; '..tostring(errors)..' art errors'
+      else
+        lastStage='combat native: layout held unchanged'
+      end
       lastRefreshTime=Now()
-      liveSync.rendered=FingerprintEntries(entries)
-      lastStage='combat read-only preview updated'
+      liveSync.combatObserved=FingerprintEntries(entries)
+      -- The authoritative physical bag changed, but virtual categories and
+      -- One Stack have NOT been rebuilt. Retain liveSync.rendered until the
+      -- ordinary full out-of-combat redraw actually completes.
     end)
-    if not ok then lastError=tostring(reason);lastStage='combat preview failed' end
+    if not ok then lastError=tostring(reason);lastStage='combat native refresh failed' end
     UpdateStatus()
     return
   end
@@ -3366,11 +3553,13 @@ function Lab:Refresh()
       if NS.CollapseView and NS.CollapseView.SetMetrics then
         NS.CollapseView.SetMetrics(BUTTON_SIZE,CELL)
       end
-      local previewCols=NS.BagGeometry.Constrain(GetDB().mainColumns or 12,mainCapacity)
+      local previewCols=NS.BagGeometry.Constrain(GetDB().mainColumns or 10,mainCapacity)
       local presentation
       if categoryMode then
-        presentation=NS.CategoryView.Plan(descriptors,visibleMain,previewCols,CELL,categoryGroups,
-          GetDB().categoryColumns or 1,UIParent and UIParent:GetWidth() or nil)
+        presentation=NS.CategoryView.Plan(descriptors,visibleMain,
+          math.max(6,math.floor(tonumber(GetDB().categorySlotColumns) or 6)),
+          CELL,categoryGroups,GetDB().categoryColumns or 2,
+          UIParent and UIParent:GetWidth() or nil)
       elseif NS.SectionPresentation then
         presentation=NS.SectionPresentation.Plan(descriptors,GetDB(),previewCols,CELL)
       end
@@ -3475,7 +3664,20 @@ function Lab:Refresh()
     end
     -- Only commit a baseline after all rendering and bookkeeping succeeds.
     -- A failed redraw must not make the watchdog consider stale output fresh.
+    -- Prepare the fully expanded second canvas *after* the ordinary view
+    -- succeeds. Existing native identities and category positions are read;
+    -- the user's saved oneStack/collapse states are NEVER changed.
+    if NS.CombatExpanded then
+      local prepOK,prepError=pcall(NS.CombatExpanded.Prepare,entries,viewLayout,
+        viewEntries,blanks,mainCapacity,ammoCapacity,reagentCapacity,
+        ammoBagIDs,ammoLabel,buttonsBySlot)
+      if not prepOK then
+        if NS.CombatExpanded.FailClosed then NS.CombatExpanded.FailClosed(prepError) end
+        Message('Expanded combat preparation deferred: '..tostring(prepError))
+      end
+    end
     liveSync.rendered = FingerprintEntries(entries)
+    liveSync.combatObserved = nil
     liveSync.last = "rendered fingerprint updated"
     lastStage = "complete"
   end, function(errorMessage) return tostring(errorMessage) end)
@@ -3531,8 +3733,6 @@ end
 SLASH_OBSIDIANBAGS1 = "/vbag"
 SLASH_OBSIDIANBAGS2 = "/vbl"
 SLASH_OBSIDIANBAGS3 = "/vb"
-SLASH_OBSIDIANBAGS4 = "/obags"
-SLASH_OBSIDIANBAGS5 = "/obsidianbags"
 SlashCmdList.OBSIDIANBAGS = function(text)
   text = (text or ""):lower():match("^%s*(.-)%s*$")
   if NS.FancySkin and NS.FancySkin.Command and NS.FancySkin.Command(text) then return end
@@ -3775,8 +3975,12 @@ SlashCmdList.OBSIDIANBAGS = function(text)
   elseif text == "ammo status" or text == "quiver status" then
     Message(NS.AmmoTransfer and NS.AmmoTransfer.Status() or "Ammo transfer module unavailable")
     Message("Section: main="..mainCapacity.." ammo="..ammoCapacity..
-      " ("..tostring(ammoLabel or 'none')..") | combat preview="..
-      tostring(NS.CombatPreview and NS.CombatPreview.IsShown()))
+      " ("..tostring(ammoLabel or 'none')..") | "..
+      (NS.CombatNative and NS.CombatNative.Status() or "combat native unavailable"))
+    if NS.CombatStackPopover then Message(NS.CombatStackPopover.Status()) end
+    if NS.CombatAvailableSlots then Message(NS.CombatAvailableSlots.Status()) end
+    if NS.CombatExpanded then Message(NS.CombatExpanded.Status()) end
+    if NS.CombatBagBinding then Message(NS.CombatBagBinding.Status()) end
   elseif text == "organize" then
     if InCombat() then Message("Leave combat to toggle Organize Mode."); return end
     local db = GetDB()
@@ -3795,6 +3999,55 @@ SlashCmdList.OBSIDIANBAGS = function(text)
   end
 end
 
+-- New brand aliases open Options by default; the original /vb, /vbl and
+-- /vbag command family keeps its long-standing bag-toggle and diagnostic
+-- behavior. Separating slash handlers avoids changing native click routes.
+SLASH_OBSIDIANSETTINGS1 = "/obags"
+SLASH_OBSIDIANSETTINGS2 = "/obsidianbags"
+SlashCmdList.OBSIDIANSETTINGS = function(text)
+  text=(text or ""):lower():match("^%s*(.-)%s*$")
+  if text=="" or text=="settings" or text=="options" then
+    if not IsReady() then
+      Message("Syndicator isn't ready yet. Try again after entering the world.")
+      return
+    end
+    CreateWindow() -- creates Settings without showing the bags
+    if NS.FancySkin and NS.FancySkin.OpenOptions then
+      NS.FancySkin.OpenOptions()
+    end
+  elseif text=="open" then
+    if not window or not window:IsShown() then Lab:Toggle() end
+  elseif text=="toggle" then
+    Lab:Toggle()
+  elseif text=="close" then
+    if window and window:IsShown() then window:Hide() end
+  else
+    -- Keep all existing subcommands available from either new alias.
+    SlashCmdList.OBSIDIANBAGS(text)
+  end
+end
+
+-- While closed, bag-update events must also keep the second canvas prepared.
+-- Never wait until combat starts to create/bind protected native buttons.
+function Lab:QueueClosedCombatPreload()
+  if Lab.hiddenCombatPreloadQueued or InCombat() or not initialized or not IsReady() or
+      not NS.CombatExpanded or (window and window:IsShown()) then return end
+  Lab.hiddenCombatPreloadQueued=true
+  C_Timer.After(.10,function()
+    Lab.hiddenCombatPreloadQueued=false
+    if InCombat() or not IsReady() or not window or window:IsShown() then return end
+    local ok,err=pcall(function()
+      local entries=ReadSnapshot()
+      NS.CombatExpanded.Prepare(entries,nil,nil,nil,
+        mainCapacity,ammoCapacity,reagentCapacity,ammoBagIDs,ammoLabel,buttonsBySlot)
+    end)
+    if not ok then
+      if NS.CombatExpanded.FailClosed then NS.CombatExpanded.FailClosed(err) end
+      Message('Closed-bag combat preparation failed: '..tostring(err))
+    end
+  end)
+end
+
 -- Independent event relay: the client reports normal bag events to SyncAudit
 -- but has reported ZERO to this core frame. Record these events and schedule
 -- ordinary coalesced refreshes, without changing cursor or saved token layout.
@@ -3807,17 +4060,20 @@ local function OnIndependentInventoryEvent(event, bagID)
       awaitingLootBagEvent = false
     end
     bagEventUnseen = true
+    Lab:QueueClosedCombatPreload()
     if type(bagID) == "number" and bagID >= 0 and bagID <= 5 and
         window and window:IsShown() then Lab:RequestRefresh(false) end
   elseif event == "BAG_UPDATE_DELAYED" then
     incomingEventSerial = incomingEventSerial + 1
     lastDelayedEvent = Now()
+    Lab:QueueClosedCombatPreload()
     if window and window:IsShown() then Lab:RequestRefresh(false) end
   elseif event == "CHAT_MSG_LOOT" then
     if window and window:IsShown() then
       lastLootHint, awaitingLootBagEvent = Now(), true
     end
   elseif event == "ITEM_LOCK_CHANGED" or event == "BAG_CONTAINER_UPDATE" then
+    Lab:QueueClosedCombatPreload()
     if window and window:IsShown() then Lab:RequestRefresh(false) end
   elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
     if HandleMerchantEvent then HandleMerchantEvent(event) end
@@ -3840,6 +4096,22 @@ InitCallbacksOnce = function()
   local db = GetDB()
   if NS.Profiles then NS.Profiles.Initialize(db) end
   pickupTrial.enabled, pickupTrial.oneShot = db.nativePickup and db.organize, false
+  -- Seed the combat canvas without showing the inventory to the player.
+  -- A character can enter combat with bags closed and open them mid-fight.
+  if not InCombat() then
+    CreateWindow()
+    if NS.CombatExpanded then
+      local ok,err=pcall(function()
+        local entries=ReadSnapshot()
+        NS.CombatExpanded.Prepare(entries,nil,nil,nil,
+          mainCapacity,ammoCapacity,reagentCapacity,ammoBagIDs,ammoLabel,buttonsBySlot)
+      end)
+      if not ok then
+        if NS.CombatExpanded.FailClosed then NS.CombatExpanded.FailClosed(err) end
+        Message('Combat canvas preload deferred: '..tostring(err))
+      end
+    end
+  end
   if NS.BankBridge and NS.BankBridge.InstallPickupProbe then
     pcall(NS.BankBridge.InstallPickupProbe)
   end
@@ -3850,7 +4122,13 @@ end
 
 -- Secure observation of Blizzard bag open/close commands, no binding override.
 function Lab:SyncExternalWindow(open)
-  if open and not InCombat() and IsReady() then
+  -- While in combat the native bag-toggle observer is only a fallback.
+  -- The hardware B key is handled by the pre-armed secure combat binding;
+  -- insecure Show/Hide here must NEVER operate on the protected inventory
+  -- window during lockdown. Outside combat the existing window linkage is
+  -- unchanged, including the real physical bag visibility checks.
+  if InCombat() then return end
+  if open and IsReady() then
     CreateWindow()
     if not window:IsShown() then window:Show() end
   elseif not open and window and window:IsShown() and
@@ -3941,8 +4219,9 @@ local function EnsureBankDropOverlay()
   end)
   layer:SetScript("OnUpdate",function()
     if bankDropCallback then
-      local popupSplit=NS.StackPopover and NS.StackPopover.IsOpen and
-        NS.StackPopover.IsOpen() and NS.StackWork and
+      local popupSplit=((NS.StackPopover and NS.StackPopover.IsOpen and
+        NS.StackPopover.IsOpen()) or (NS.CombatStackPopover and
+        NS.CombatStackPopover.IsOpen and NS.CombatStackPopover.IsOpen())) and NS.StackWork and
         NS.StackWork.IsSplitInProgress and NS.StackWork.IsSplitInProgress()
       if (InCombat() and not popupSplit) or not window or not window:IsShown() then
         bankDropCallback=nil
@@ -3966,8 +4245,9 @@ local function EnsureBankDropOverlay()
   return layer
 end
 local function ArmBankDrop(callback)
-  local popupSplit=NS.StackPopover and NS.StackPopover.IsOpen and
-    NS.StackPopover.IsOpen() and NS.StackWork and
+  local popupSplit=((NS.StackPopover and NS.StackPopover.IsOpen and
+    NS.StackPopover.IsOpen()) or (NS.CombatStackPopover and
+    NS.CombatStackPopover.IsOpen and NS.CombatStackPopover.IsOpen())) and NS.StackWork and
     NS.StackWork.IsSplitInProgress and NS.StackWork.IsSplitInProgress()
   if type(callback)~="function" or not window or not window:IsShown() or
       (InCombat() and not popupSplit) or PhysicalBusy() or pickupTrial.session or pickupTrial.settling or
@@ -4032,8 +4312,10 @@ NS.MainPanel = {
     -- User-initiated stack split from an already-open native popup may run
     -- during combat where the client permits it. All batch/other operations
     -- continue to use the established combat guard.
-    local combatOk=not InCombat() or (allowPopupCombat and NS.StackPopover and
-      NS.StackPopover.IsOpen and NS.StackPopover.IsOpen())
+    local combatOk=not InCombat() or (allowPopupCombat and
+      ((NS.StackPopover and NS.StackPopover.IsOpen and NS.StackPopover.IsOpen()) or
+        (NS.CombatStackPopover and NS.CombatStackPopover.IsOpen and
+          NS.CombatStackPopover.IsOpen())))
     return window and window:IsShown() and combatOk and not dragging and
       (allowBatch or not PhysicalBusy()) and not pickupTrial.session and not pickupTrial.settling and not externalSession and
       not vendorBusy and not vendorPending
@@ -4065,16 +4347,45 @@ NS.MainPanel = {
   end,
   GetAmmoBagIDs = function() return ammoBagIDs end,
   GetSplitTarget = function()
-    local popupSplit=NS.StackPopover and NS.StackPopover.IsOpen and
-      NS.StackPopover.IsOpen() and NS.StackWork and
+    local popupSplit=((NS.StackPopover and NS.StackPopover.IsOpen and
+      NS.StackPopover.IsOpen()) or (NS.CombatStackPopover and
+      NS.CombatStackPopover.IsOpen and NS.CombatStackPopover.IsOpen())) and NS.StackWork and
       NS.StackWork.IsSplitInProgress and NS.StackWork.IsSplitInProgress()
     if not window or not window:IsShown() or (InCombat() and not popupSplit) or
-        not (GetDB().organize or (NS.StackPopover and NS.StackPopover.IsOpen())) or
+        not (GetDB().organize or (NS.StackPopover and NS.StackPopover.IsOpen()) or
+          (NS.CombatStackPopover and NS.CombatStackPopover.IsOpen())) or
         dragging or pickupTrial.session or pickupTrial.settling then return nil end
     local index=FindDropIndex()
-    if not index or viewLayout[index]~=false then return nil end
-    local kind=NS.SectionLayout.IndexKind(index,mainCapacity,ammoCapacity)
-    return {visualIndex=index,entry=nil,isAmmo=kind=="ammo",isReagent=kind=="reagent"}
+    if index then
+      -- An occupied cell always stays occupied: never reinterpret a bad
+      -- physical-drop target as a request to deposit somewhere else.
+      if viewLayout[index]~=false then return nil end
+      local kind=NS.SectionLayout.IndexKind(index,mainCapacity,ammoCapacity)
+      return {visualIndex=index,entry=nil,isAmmo=kind=="ammo",isReagent=kind=="reagent"}
+    end
+    -- During an AUTHORIZED split only, a click on unoccupied background
+    -- within the inventory scroll area means "first empty ordinary slot".
+    -- This is the established verified split receiver, not an unrestricted
+    -- handler for arbitrary foreign cursors or native item OnClick.
+    if not (NS.StackWork and NS.StackWork.IsSplitInProgress and
+        NS.StackWork.IsSplitInProgress()) or not scroll or not scroll:IsShown() then
+      return nil
+    end
+    local x,y=GetCursorUI()
+    local l,r,t,b=scroll:GetLeft(),scroll:GetRight(),scroll:GetTop(),scroll:GetBottom()
+    if type(l)~="number" or type(r)~="number" or
+        type(t)~="number" or type(b)~="number" or
+        x<l or x>r or y<b or y>t then return nil end
+    if NS.CategoryView and NS.CategoryView.IsActive(GetDB()) and
+        NS.CategoryView.HitInteractiveCategory and
+        NS.CategoryView.HitInteractiveCategory(x,y) then return nil end
+    for candidate=1,mainCapacity do
+      if viewLayout[candidate]==false then
+        return {visualIndex=candidate,entry=nil,isAmmo=false,
+          isReagent=false,backgroundDrop=true}
+      end
+    end
+    return nil
   end,
   -- Do not consolidate bank items into a carried stack deliberately marked
   -- for vendor sale; that would change the intended quantity to be sold.
@@ -4126,6 +4437,23 @@ NS.MainPanel = {
       entry.slotID==req.bag.slotID and entry.count==req.bag.count
   end,
   RequestRefresh = function() Lab:RequestRefresh(true) end,
+  FinishCategoryClickPickup = function()
+    local candidate=pickupTrial.clickCandidate
+    if InCombat() or not candidate or not candidate.armed or
+        Now()-candidate.started>10 or pickupTrial.session or
+        pickupTrial.settling or PhysicalBusy() then return false end
+    local matches=CursorStillMatchesSession(candidate)
+    local valid=CheckPickupSource(candidate)
+    if matches~=true or valid~=true then return false end
+    pickupTrial.clickCandidate=nil
+    pickupTrial.session=candidate
+    -- Route through the proven verified ClearCursor/return/targeted-merge
+    -- pipeline, never hand a foreign cursor to the physical merge worker.
+    FinishNativePickupTrial("category-native-click-drop")
+    return true
+  end,
+  -- Read-only reference for postcombat signature invalidation.
+  CombatButtons = function() return buttonsBySlot end,
   StackPopoverSnapshot = function()
     return viewLayout,viewEntries,GetDB().items
   end,

@@ -2,7 +2,7 @@
 local _, ns = ...
 ns.BagGeometry = {}
 local G = ns.BagGeometry
-local currentColumns, currentSize, currentCell, currentReverse = 12, 35, 39, false
+local currentColumns, currentSize, currentCell, currentReverse = 10, 35, 39, false
 local TOP, FOOT = 48, 51
 function G.Metrics(db)
   local size=math.max(30,math.min(42,math.floor((tonumber(db and db.iconSize) or 35)+.5)))
@@ -40,7 +40,7 @@ function G.Apply(main,scroll,child,mainCapacity,ammoCapacity,reagentCapacity,db,
   currentSize,CELL=G.Metrics(db)
   currentCell=CELL
   currentReverse=db and db.reverseSort==true or false
-  local requested=(db and db.mainColumns) or 12
+  local requested=(db and db.mainColumns) or 10
   currentColumns=G.Constrain(requested,maxMainCapacity or mainCapacity)
   if db then db.mainColumns=currentColumns end
   local sectionColumns=ns.SectionLayout.TotalColumns(ammoCapacity,reagentCapacity)
