@@ -17,7 +17,7 @@ local function Current()
   local a=API()
   return a and a.GetCurrentCharacter and a.GetCurrentCharacter()
 end
-local function Note(message) print("|cff8ad9ffObsidian Bags:|r "..message) end
+local function Note(message) ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..message) end
 local function Item(bag,slot,source,kind)
   return {bag=bag,slot=slot,itemID=source and source.itemID,
     link=source and (source.itemLink or source.link),

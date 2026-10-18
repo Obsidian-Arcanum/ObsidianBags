@@ -27,7 +27,7 @@ local function Money(value)
   return table.concat(parts," ")
 end
 local function Notice(message)
-  print("|cff8ad9ffObsidian Bags:|r "..message)
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..message)
 end
 local function Verify()
   return Call("CanUseBank")==true and Call("CanPurchaseBankTab")==true

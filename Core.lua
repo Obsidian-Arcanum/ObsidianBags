@@ -96,7 +96,7 @@ local VIEW_WIDTH = COLS * CELL - GAP
 local unpack = unpack
 
 local function Message(message)
-  print("|cff8ad9ffObsidian Bags:|r " .. tostring(message))
+  NS.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r " .. tostring(message))
 end
 
 local function PrintIncomingStatus()
@@ -3928,7 +3928,8 @@ SlashCmdList.OBSIDIANBAGS = function(text)
     Message("Refresh requested. Saved virtual arrangement retained.")
   elseif text == "diag" then
     local db = GetDB()
-    Message("Version 0.0.38; ready=" .. tostring(IsReady()) ..
+    NS.ChatFeedback.Direct("Version " .. tostring((C_AddOns and C_AddOns.GetAddOnMetadata and
+      C_AddOns.GetAddOnMetadata("ObsidianBags","Version")) or "unknown") .. "; ready=" .. tostring(IsReady()) ..
       "; C_Container=" .. tostring(C_Container ~= nil) ..
       "; currentCharacter=" .. tostring(Syndicator and Syndicator.API and Syndicator.API.GetCurrentCharacter()))
     local parts = {}
@@ -3936,29 +3937,29 @@ SlashCmdList.OBSIDIANBAGS = function(text)
       local ok, count = pcall(C_Container.GetContainerNumSlots, bagID)
       parts[#parts + 1] = tostring(bagID) .. ":" .. (ok and tostring(count) or "ERROR " .. tostring(count))
     end
-    Message("CARRIED bag-slot counts: " .. table.concat(parts, ", "))
+    NS.ChatFeedback.Direct("CARRIED bag-slot counts: " .. table.concat(parts, ", "))
     local keyringID, keyringSlots = GetKeyringInfo()
-    Message("Excluded keyring: " .. tostring(keyringID) .. "=" ..
+    NS.ChatFeedback.Direct("Excluded keyring: " .. tostring(keyringID) .. "=" ..
       tostring(keyringSlots) .. " slots (future side panel; NOT backpack capacity)")
-    Message("Last scan: " .. lastScan)
-    Message("Sections: main " .. tostring(mainCapacity) .. " slots; " ..
+    NS.ChatFeedback.Direct("Last scan: " .. lastScan)
+    NS.ChatFeedback.Direct("Sections: main " .. tostring(mainCapacity) .. " slots; " ..
       (ammoLabel or "ammunition") .. " " .. tostring(ammoCapacity) ..
       " slots; REAGENTS " .. tostring(reagentCapacity) .. " slots")
-    Message("Virtual drops: " .. tostring(completedVirtualDrops) ..
+    NS.ChatFeedback.Direct("Virtual drops: " .. tostring(completedVirtualDrops) ..
       "; native callback suppressions=" .. tostring(suppressedDropCallbacks) ..
       "; post-drop cursor=" .. tostring(lastVirtualDropCursor))
-    Message("Drop callback breakdown: suppressed OnReceiveDrag=" ..
+    NS.ChatFeedback.Direct("Drop callback breakdown: suppressed OnReceiveDrag=" ..
       tostring(suppressedReceiveCallbacks) .. "; forwarded receives=" ..
       tostring(forwardedReceiveCallbacks) ..
       "; native OnClick=untouched (not instrumented)")
-    Message("Protected-action events: blocked=" .. tostring(blockedActionCount) ..
+    NS.ChatFeedback.Direct("Protected-action events: blocked=" .. tostring(blockedActionCount) ..
       " forbidden=" .. tostring(forbiddenActionCount) ..
       "; last=" .. lastActionWarning .. "; /vbag trace show for event order")
     PrintIncomingStatus()
-    Message("External drag: " .. tostring(lastExternalPickup) ..
+    NS.ChatFeedback.Direct("External drag: " .. tostring(lastExternalPickup) ..
       "; reentry=" .. tostring(reentryTest) ..
       "; external ghost=" .. tostring(externalGhostTest))
-    Message("Native real-cursor mode: " .. (pickupTrial.enabled and
+    NS.ChatFeedback.Direct("Native real-cursor mode: " .. (pickupTrial.enabled and
         (pickupTrial.oneShot and "ONCE" or "CONTINUOUS") or "OFF") ..
       "; active=" .. tostring(pickupTrial.session ~= nil) ..
       "; settling=" .. tostring(pickupTrial.settling ~= nil) ..
@@ -3968,31 +3969,31 @@ SlashCmdList.OBSIDIANBAGS = function(text)
       "; attempts=" .. pickupTrial.attempts .. " returned=" .. pickupTrial.returned ..
       " committed=" .. pickupTrial.committed .. " rejected=" .. pickupTrial.rejected ..
       " external=" .. pickupTrial.external .. "; last=" .. pickupTrial.last)
-    Message("Reentry attempts=" .. tostring(reentryAttempts) ..
+    NS.ChatFeedback.Direct("Reentry attempts=" .. tostring(reentryAttempts) ..
       " restored=" .. tostring(reentryRestored) ..
       " rejected=" .. tostring(reentrySkipped) ..
       "; live session=" .. tostring(externalSession and externalSession.phase or "none") ..
       "; result=" .. tostring(lastReentryResult))
-    Message("External drag state: " .. tostring(lastExternalPickup) ..
+    NS.ChatFeedback.Direct("External drag state: " .. tostring(lastExternalPickup) ..
       "; lock counts stable=" .. tostring(stableLockedCount) ..
       " unstable=" .. tostring(unstableLockedCount) ..
       "; unlock retries=" .. tostring(unlockRetries) ..
       "; last lock wait=" .. tostring(lastLockWaitMs) .. " ms" ..
       "; queue wait=" .. tostring(lastQueueLatencyMs or "pending") .. " ms")
-    Message(string.format("Timing: bag event %.3f, delayed %.3f, Syndicator %.3f, redraw %.3f; bag-to-visible %s ms; loot-hint-to-visible %s ms",
+    NS.ChatFeedback.Direct(string.format("Timing: bag event %.3f, delayed %.3f, Syndicator %.3f, redraw %.3f; bag-to-visible %s ms; loot-hint-to-visible %s ms",
       lastBagEvent, lastDelayedEvent, lastCacheEvent, lastRefreshTime,
       tostring(lastBagToVisibleMs or "not measured"),
       tostring(lastLootVisibleMs or "not measured")))
-    Message("Loot-hint to first BAG_UPDATE: " .. tostring(lastLootToBagMs or "not measured") ..
+    NS.ChatFeedback.Direct("Loot-hint to first BAG_UPDATE: " .. tostring(lastLootToBagMs or "not measured") ..
       " ms (chat hint may precede authoritative inventory data)")
-    Message("Temporary junk: " .. tostring(vendorSold) .. " last vendor sales, " ..
+    NS.ChatFeedback.Direct("Temporary junk: " .. tostring(vendorSold) .. " last vendor sales, " ..
       tostring(vendorSkipped) .. " skips; last batch " .. tostring(vendorElapsedMs or "pending") ..
       " ms; merchant active=" .. tostring(CurrentMerchant()))
     local ms = NS.PhysicalMove.Status()
-    Message("Physical move: busy=" .. tostring(ms.busy) .. "; confirmed=" ..
+    NS.ChatFeedback.Direct("Physical move: busy=" .. tostring(ms.busy) .. "; confirmed=" ..
       ms.confirmed .. "; stopped=" .. ms.stopped .. "; last=" .. ms.last)
-    Message("Last stage: " .. lastStage .. (lastError and (" | ERROR " .. lastError) or ""))
-    Message("Layout: version=" .. tostring(db.layoutVersion) ..
+    NS.ChatFeedback.Direct("Last stage: " .. lastStage .. (lastError and (" | ERROR " .. lastError) or ""))
+    NS.ChatFeedback.Direct("Layout: version=" .. tostring(db.layoutVersion) ..
       ", kind=" .. tostring(db.layoutKind) .. ", positions=" ..
       tostring(db.layout and #db.layout or 0) .. ", tokens=" ..
       tostring(db.nextToken) .. ", organize=" .. tostring(db.organize))
@@ -4038,7 +4039,7 @@ SlashCmdList.OBSIDIANBAGS = function(text)
     local progress = bs.mode == "automatic" and
       (tostring(bs.completed) .. " (safety cap " .. tostring(bs.limit) .. ")") or
       (tostring(bs.completed) .. "/" .. tostring(bs.limit))
-    Message("Physical batch: busy=" .. tostring(bs.busy) ..
+    NS.ChatFeedback.Direct("Physical batch: busy=" .. tostring(bs.busy) ..
       "; mode=" .. tostring(bs.mode) .. "; phase=" .. tostring(bs.phase) ..
       "; pacing=" .. tostring(bs.pacing) .. "; stage=" .. tostring(bs.stage) ..
       "; placed=" .. tostring(bs.placed) .. "; merged=" .. tostring(bs.merged) ..
@@ -4051,7 +4052,7 @@ SlashCmdList.OBSIDIANBAGS = function(text)
       "; session totals=" .. bs.confirmedTotal .. " confirmed, " ..
       bs.stoppedTotal .. " stopped")
     if NS.SortProjection and NS.SortProjection.Status then
-      Message("Sort projection: " .. NS.SortProjection.Status())
+      NS.ChatFeedback.Direct("Sort projection: " .. NS.SortProjection.Status())
     end
   elseif text == "optimize batch log" or text == "sort log" then
     local bs = NS.PhysicalBatch.Status()
@@ -4839,3 +4840,18 @@ end)
 
 -- Main event frame must be visible to receive Blizzard events.
 if Lab.IsShown and not Lab:IsShown() and Lab.Show then Lab:Show() end
+
+-- Preserve all existing slash commands and their original handler bodies.
+-- Only intentional diagnostic requests may emit Obsidian Bags chat messages.
+-- Core.lua is already near the 200-main-local Lua limit: store original
+-- handlers on the addon namespace, without introducing new chunk locals.
+NS.ChatFeedback.BagsHandler = SlashCmdList.OBSIDIANBAGS
+SlashCmdList.OBSIDIANBAGS = function(text)
+  return NS.ChatFeedback.Run(text, NS.ChatFeedback.BagsHandler)
+end
+NS.ChatFeedback.CombatHandler = SlashCmdList.OBSIDIANBAGSCOMBATDROP
+if NS.ChatFeedback.CombatHandler then
+  SlashCmdList.OBSIDIANBAGSCOMBATDROP = function(text)
+    return NS.ChatFeedback.Run(text, NS.ChatFeedback.CombatHandler, true)
+  end
+end

@@ -267,7 +267,7 @@ local function MakeSlot(group,bag,slot)
     if ns.StackWork and ns.StackWork.OpenSplit then
       local started,why=ns.StackWork.OpenSplit(entry,b.labOriginalIndex,self,"popover")
       if not started then
-        print("|cff8ad9ffObsidian Bags:|r Combat pop-out split: "..tostring(why))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Combat pop-out split: "..tostring(why))
       end
     end
   end)
@@ -295,7 +295,7 @@ local function MakeSlot(group,bag,slot)
     if ns.StackWork and ns.StackWork.OpenSplit then
       local started,why=ns.StackWork.OpenSplit(entry,b.labOriginalIndex,self,"popover")
       if not started then
-        print("|cff8ad9ffObsidian Bags:|r Combat shift split: "..tostring(why))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Combat shift split: "..tostring(why))
       end
     end
   end)

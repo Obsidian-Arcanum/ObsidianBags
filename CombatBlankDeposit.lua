@@ -58,11 +58,11 @@ local function Record(kind,cursor,event,details)
   if kind=="STOP" then stats.lastRefusal="item="..entry.id.." "..entry.details end
 end
 local function Trace()
-  print("|cff8ad9ffObsidian Bags:|r combat blank drop trace: "..#stats.recent..
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r combat blank drop trace: "..#stats.recent..
     " recent decisions, attempts="..stats.attempts.." stops="..stats.stops..
     " (oldest first; read-only, no item actions)")
   for i,entry in ipairs(stats.recent) do
-    print("|cff8ad9ffObsidian Bags:|r "..i.." "..entry.kind..
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..i.." "..entry.kind..
       " item="..entry.id.." event="..entry.event.." "..entry.details)
   end
 end
@@ -278,8 +278,8 @@ SlashCmdList["OBSIDIANBAGSCOMBATDROP"]=function(input)
   local cmd=(input or ""):lower():match("^%s*(%S+)") or "status"
   if cmd=="trace" then Trace();return end
   if cmd=="why" then
-    print("|cff8ad9ffObsidian Bags:|r last refusal (FULL): "..stats.lastRefusal)
-    print("|cff8ad9ffObsidian Bags:|r source: "..
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r last refusal (FULL): "..stats.lastRefusal)
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r source: "..
       (ns.CombatCursorCancel and ns.CombatCursorCancel.SourceSummary and
         ns.CombatCursorCancel.SourceSummary() or "no source module"))
     return
@@ -288,14 +288,14 @@ SlashCmdList["OBSIDIANBAGSCOMBATDROP"]=function(input)
     local option=(input or ""):lower():match("^%s*%S+%s+(%S+)")
     if option=="on" or option=="off" then
       local ok,msg=ns.CombatCursorCancel.SetLockedSourceFallback(option=="on")
-      print("|cff8ad9ffObsidian Bags:|r "..tostring(msg))
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(msg))
     else
-      print("|cff8ad9ffObsidian Bags:|r use /obcombatdrop lockedsource on|off (outside combat)")
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r use /obcombatdrop lockedsource on|off (outside combat)")
     end
     return
   end
   if cmd=="off" or cmd=="on" then
-    if Combat() then print("Obsidian Bags combat drop: change only outside combat");return end
+    if Combat() then ns.ChatFeedback.Print("Obsidian Bags combat drop: change only outside combat");return end
     enabled=cmd=="on"
     -- Emergency session rollback controls BOTH blank-content behaviors.
     if ns.CombatCursorCancel then ns.CombatCursorCancel.SetEnabled(enabled) end
@@ -305,12 +305,12 @@ SlashCmdList["OBSIDIANBAGSCOMBATDROP"]=function(input)
     if option=="on" or option=="off" then
       if ns.CombatCursorCancel then
         local ok,msg=ns.CombatCursorCancel.SetEnabled(option=="on")
-        print("|cff8ad9ffObsidian Bags:|r "..tostring(msg))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(msg))
       end
     else
-      print("|cff8ad9ffObsidian Bags:|r use /obcombatdrop cancel on|off (outside combat)")
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r use /obcombatdrop cancel on|off (outside combat)")
     end
   end
-  print("|cff8ad9ffObsidian Bags:|r "..D.Status())
-  if ns.CombatCursorCancel then print("|cff8ad9ffObsidian Bags:|r "..ns.CombatCursorCancel.Status()) end
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..D.Status())
+  if ns.CombatCursorCancel then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..ns.CombatCursorCancel.Status()) end
 end

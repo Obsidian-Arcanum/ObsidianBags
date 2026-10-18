@@ -1,9 +1,0 @@
-Obsidian Bags 0.0.163 - precomputed combat utility empty-slot presentation
-
-- v0.0.162 grouped dedicated utility empties under UTILITY only in normal Category View; expanded combat preparation inadvertently kept them in AVAILABLE SLOTS.
-- Now the same specialty-only physical empties are grouped under UTILITY when the expanded Category View combat layout is PREPARED OUTSIDE COMBAT.
-- Force-expanded combat layout still shows ALL real physical utility and ordinary empty slots, ignores category collapse/One Stack visual compaction, and retains unique bagID:slotID native bindings.
-- No live in-combat secure frame reanchor/reflow, change to any combat module, cursor cancellation, shift split deposit, core physical moves, bank or sorting logic.
-- During combat inventory updates, a physical slot retains its pre-combat coordinate until returning to normal presentation; categories recalculate after combat.
-
-Test: with quiver free slots plus ordinary free slots, open Category View outside combat. Confirm UTILITY empties are inside UTILITY. Enter combat: UTILITY should display the dedicated empties, AVAILABLE should include only ordinary blanks. Test one split-to-blank deposit, pickup/drag cancel, B open/close, postcombat category restore.

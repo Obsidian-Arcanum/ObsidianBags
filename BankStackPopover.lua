@@ -85,7 +85,7 @@ local function PhysicalIcon(i)
     local ok,reason=ns.BankPanel.SummarySourceAction(
       self.labSource,self.labCategoryID,action,self)
     if not ok then
-      if reason then print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
+      if reason then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
     elseif action=="inspect" then
       selectedSource=self.labSource
       Highlight()
@@ -105,7 +105,7 @@ local function PhysicalIcon(i)
     self.labDragging=ok==true
     if ok then self.labDragIndex=source.originalIndex end
     if not ok and reason then
-      print("|cff8ad9ffObsidian Bags:|r "..tostring(reason))
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(reason))
     end
   end)
   button:SetScript("OnDragStop",function(self)

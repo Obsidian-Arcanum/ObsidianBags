@@ -20,7 +20,7 @@ function S.Set(origin, text)
     if type(listener) == "function" then
       local ok, why = pcall(listener, text)
       if not ok and DEFAULT_CHAT_FRAME then
-        print("|cff8ad9ffObsidian Bags:|r shared search view "..tostring(key).." error: "..tostring(why))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r shared search view "..tostring(key).." error: "..tostring(why))
       end
     end
   end

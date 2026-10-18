@@ -20,7 +20,7 @@ local function AnyPopoverOpen()
       ns.CombatStackPopover.IsOpen()) or false
 end
 local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
-local function Say(s) print("|cff8ad9ffObsidian Bags:|r "..tostring(s)) end
+local function Say(s) ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(s)) end
 local function Safe(v) if issecretvalue and issecretvalue(v) then return nil end return v end
 local function Cursor()
   if not GetCursorInfo then return nil,nil,false end

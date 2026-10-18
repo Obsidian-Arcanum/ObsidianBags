@@ -93,7 +93,7 @@ function P.TryMergeHeld(target)
   nativeSource,pendingSource=nil,nil
   local ok=pcall(ClearCursor)
   if not ok or not EmptyCursor() then
-    print("|cff8ad9ffObsidian Bags:|r Pop-out merge stopped: native cursor return not verified")
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out merge stopped: native cursor return not verified")
     return false
   end
   local request={source=source,target=target,sourceToken=sourceToken,
@@ -124,7 +124,7 @@ function P.TryMergeHeld(target)
     if Now()-request.started<.8 then C_Timer.After(.03,VerifyLater)
     else
       mergeSettling=nil
-      print("|cff8ad9ffObsidian Bags:|r Pop-out merge cancelled: source/target not restored")
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out merge cancelled: source/target not restored")
     end
   end
   C_Timer.After(0,VerifyLater)
@@ -276,7 +276,7 @@ local function PhysicalButton(bag,slot)
         dismissAfterCursor=false
       end
       if not ok then
-        print("|cff8ad9ffObsidian Bags:|r Pop-out split: "..tostring(why or "unavailable"))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out split: "..tostring(why or "unavailable"))
       end
     end
   end)
@@ -347,7 +347,7 @@ local function ResolveBlankPopupReturn(session)
   if not entry or not HeldMatches(entry) then return end
   local current,token=CurrentPhysical(entry.bagID,entry.slotID)
   if token~=source.token or not SamePhysical(current,entry) then
-    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: original physical stack changed")
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: original physical stack changed")
     return
   end
   -- An authentic full-stack native pickup may report an EMPTY physical
@@ -359,12 +359,12 @@ local function ResolveBlankPopupReturn(session)
   if not ok or (live and (live.itemID~=entry.itemID or
       live.stackCount~=entry.count or
       (entry.link and live.hyperlink and live.hyperlink~=entry.link))) then
-    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: live physical slot differs")
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: live physical slot differs")
     return
   end
   local clearOK=pcall(ClearCursor)
   if not clearOK or not EmptyCursor() then
-    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return stopped: cursor not confirmed empty")
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Pop-out blank return stopped: cursor not confirmed empty")
     return
   end
   if nativeSource==source then nativeSource=nil end

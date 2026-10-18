@@ -12,7 +12,7 @@ local function Safe(v)
   return v
 end
 local function Report(message)
-  print("|cff8ad9ffObsidian Bags:|r "..tostring(message))
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(message))
 end
 local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
 local function BagInventorySlot(bag)

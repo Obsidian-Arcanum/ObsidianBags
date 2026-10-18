@@ -1,9 +1,0 @@
-Obsidian Bags 0.0.164 - combat UTILITY empties on ALL preparation paths
-
-- v0.0.163 updated CategoryView.Build(forceExpanded=true) but the secure combat canvas also has a completely separate PhysicalDescriptors builder. Core invokes that physical builder on closed-bag preload, and CombatExpanded uses it again if normal layout coverage fails. It still put all physical empties under AVAILABLE.
-- PhysicalDescriptors now classifies blank specialty bag slots with SectionLayout.Kind(bagID,ammoBags); ammo/quiver/Soul Bag and dedicated reagent physical empties go to UTILITY, or mandatory MISC if UTILITY hidden. Ordinary empties still go to AVAILABLE.
-- Added read-only telemetry to /vb ammo status: prepPath=reconciled-layout, closed-physical-preload, or physical-coverage-repair plus utilityEmpty and generalEmpty counts. This verifies which path the client actually used.
-- No native protected button bindings or combat code executing inside lockdown changed. No cursor or split deposit, sorting, bank or saved profiles changes. CategoryView.lua is BYTE IDENTICAL to v163.
-- Existing in-combat physical slot coordinates remain fixed. The correct category is assigned during preparation outside combat.
-
-Test: equip a quiver with empty slots. With bags CLOSED outside combat, /reload, enter combat then press B. Empty quiver slots belong to UTILITY and general blanks to AVAILABLE. Check /vb ammo status for prepPath and counts. Repeat with bags OPEN before combat, verify same grouping and intact native interactions.

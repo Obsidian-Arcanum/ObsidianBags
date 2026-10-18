@@ -36,7 +36,7 @@ function K.IsCollapsed()
   return db and db.collapseKeyring == true or false
 end
 local function Trace(message)
-  print("|cff8ad9ffObsidian Bags:|r Keyring: " .. tostring(message))
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Keyring: " .. tostring(message))
 end
 
 -- ContainerFrameItemButtonTemplate can turn its new-item visuals back on

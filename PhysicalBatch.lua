@@ -22,7 +22,7 @@ local AUTO_REFRESH_RETRIES = 40 -- tolerate async cache/Bag Update after real mo
 local AUTO_STAGE_GAP = 0.035
 
 local function Say(msg)
-  print("|cff8ad9ffObsidian Bags:|r " .. tostring(msg))
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r " .. tostring(msg))
 end
 
 local function Key(move)

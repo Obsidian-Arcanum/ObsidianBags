@@ -10,7 +10,7 @@ local stats = {prepared=0, confirmed=0, stopped=0, partial=0, refused=0,
   firstLegVerified=0, secondLegVerified=0, secondLegStarted=0,
   last="no cross-window transfer attempted", lastDurationMs=0, lastLeg1Ms=0, lastLeg2Ms=0}
 local function Say(message)
-  print("|cff8ad9ffObsidian Bags:|r "..tostring(message))
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(message))
 end
 local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
 local traceEnabled, traceHistory, traceSequence = false,{},0

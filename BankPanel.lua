@@ -153,7 +153,7 @@ local function QuickWithdraw(button,index)
         current.count~=source.count or (source.link and current.link~=source.link) then
       quickRefused=quickRefused+1
       last="quick remainder stopped: visual bank source changed; physical stacks preserved"
-      print("|cff8ad9ffObsidian Bags:|r "..last)
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
       SetStatus()
       return
     end
@@ -164,7 +164,7 @@ local function QuickWithdraw(button,index)
       -- Merges already verified. An unplaced remainder stays safely in bank.
       quickRefused=quickRefused+1
       last="bank partial stacks merged ("..tostring(merges).."); remainder stays in bank: no empty main virtual cell"
-      print("|cff8ad9ffObsidian Bags:|r "..last)
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
       SetStatus()
       return
     end
@@ -176,7 +176,7 @@ local function QuickWithdraw(button,index)
     if not ok then
       quickRefused=quickRefused+1
       last="bank quick remainder refused: "..tostring(why)
-      print("|cff8ad9ffObsidian Bags:|r "..last)
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
     else
       quickPrepared=quickPrepared+1
       selected=nil
@@ -200,7 +200,7 @@ local function QuickWithdraw(button,index)
     end
     quickRefused=quickRefused+1
     last="bank right-click consolidation refused: "..tostring(why)
-    print("|cff8ad9ffObsidian Bags:|r "..last)
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
     SetStatus()
     return
   end
@@ -221,7 +221,7 @@ function P.AcceptExternalCursor(index,route)
   local function Refuse(why)
     externalStats.refused=externalStats.refused+1
     externalStats.last=tostring(why)
-    print("|cff8ad9ffObsidian Bags:|r Bank cursor deposit refused: "..tostring(why))
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Bank cursor deposit refused: "..tostring(why))
     return false
   end
   if externalDeposit or splitDropCallback or not M.CanRead() or not panel or not panel:IsShown() or
@@ -285,7 +285,7 @@ function P.AcceptExternalCursor(index,route)
           C_Timer.After(.07,function() Place(attempt+1) end)
         else
           externalStats.last="physical deposit VERIFIED, but virtual placement was not confirmed at cell "..index
-          print("|cff8ad9ffObsidian Bags:|r "..externalStats.last)
+          ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..externalStats.last)
         end
       end
       C_Timer.After(.04,function() Place(0) end)
@@ -297,7 +297,7 @@ function P.AcceptExternalCursor(index,route)
       externalStats.last="unverified native cursor bank deposit at "..bank..":"..slot..
         " expected="..id.." live="..tostring(live and live.itemID)..
         " cursor="..tostring(held).."; inspect bank and cursor, don't retry"
-      print("|cff8ad9ffObsidian Bags:|r "..externalStats.last)
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..externalStats.last)
       return
     end
     C_Timer.After(.05,Poll)
@@ -450,7 +450,7 @@ local function AfterNativeReturn(session,callback,cancelled)
       last=cancelled and
         "bank cursor cancelled but original physical source not verified; interaction remains blocked" or
         "bank native cursor returned but physical source did not stabilize; virtual move cancelled"
-      print("|cff8ad9ffObsidian Bags:|r "..last)
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
       SetStatus()
     end
   end
@@ -544,14 +544,14 @@ local function NewButton(i)
         self.entry and self.entry.itemID and self.entry.count and self.entry.count>1 then
       if ns.StackWork and ns.StackWork.OpenSplit then
         local ok,why=ns.StackWork.OpenSplit(self.entry,i,self,"bank")
-        if not ok then print("|cff8ad9ffObsidian Bags:|r Bank split refused: "..tostring(why)) end
+        if not ok then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Bank split refused: "..tostring(why)) end
       end
       return
     end
     if mouseButton~="LeftButton" or not SafeToEdit() then return end
     if self.entry and self.entry.itemID then
       local ok,reason=StartBankSelection(i,self.entry,self.token)
-      if not ok and reason then print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
+      if not ok and reason then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
     end
   end)
   -- Stock backpack drag-release calls OnReceiveDrag on the destination.
@@ -572,7 +572,7 @@ local function NewButton(i)
   button:SetScript("OnDragStart",function(self)
     if IsShiftKeyDown and IsShiftKeyDown() then return end
     local ok,reason=StartBankDrag(i,self.entry,self.token)
-    if not ok and reason then print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
+    if not ok and reason then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
   end)
   button:SetScript("OnDragStop",function(self)
     if P.ResolveBankDrag then P.ResolveBankDrag(i,"bank-source-drag-stop") end
@@ -645,7 +645,7 @@ function P.ResolveBankDrag(index,trigger)
   local returned,returnWhy=ReturnBankCursor(source)
   if not returned then
     last="bank cursor return STOPPED: "..tostring(returnWhy)
-    print("|cff8ad9ffObsidian Bags:|r "..last)
+    ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last)
     SetStatus()
     return
   end
@@ -675,7 +675,7 @@ function P.ResolveBankDrag(index,trigger)
       else
         crossDropRejected=crossDropRejected+1
         last="cross transfer refused: "..tostring(why)
-        print("|cff8ad9ffObsidian Bags:|r CROSS-WINDOW REFUSED: "..tostring(why))
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r CROSS-WINDOW REFUSED: "..tostring(why))
       end
       RefreshDisplay()
     else
@@ -1409,11 +1409,11 @@ local function Build()
       local session=bankCursorSession
       if HeldSourceMatches(session) then
         local ok,why=ReturnBankCursor(session)
-        if not ok then print("|cff8ad9ffObsidian Bags:|r Bank closed with unverified cursor return: "..tostring(why)) end
+        if not ok then ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Bank closed with unverified cursor return: "..tostring(why)) end
       elseif MouseIsClear() then
         bankCursorSession=nil
       else
-        print("|cff8ad9ffObsidian Bags:|r Bank closed with an unexpected held cursor; item left untouched")
+        ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Bank closed with an unexpected held cursor; item left untouched")
       end
     end
     if ns.BankStackPopover then ns.BankStackPopover.Hide() end
@@ -1500,7 +1500,7 @@ local function Poll()
         scanReason=last
         readErrors=readErrors+1
         if DEFAULT_CHAT_FRAME then
-          print("|cff8ad9ffObsidian Bags:|r "..last.."; /vb bank status")
+          ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..last.."; /vb bank status")
         end
       end
       SetStatus()
@@ -1575,7 +1575,7 @@ local function EnsureSplitDropReceiver()
     splitDropPressed=false
     local ok,result=pcall(fn)
     if not ok then
-      print("|cff8ad9ffObsidian Bags:|r Bank split receiver error: "..tostring(result))
+      ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r Bank split receiver error: "..tostring(result))
       return
     end
     -- Keep intercepting real-cursor clicks until split is actually verified

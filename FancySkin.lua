@@ -27,7 +27,7 @@ local GOLD = {.78,.64,.41}
 local CYAN = {.19,.74,1}
 local function InCombat() return InCombatLockdown and InCombatLockdown() end
 local function DB() return dbGetter and dbGetter() or {} end
-local function Print(message) print("|cff8ad9ffObsidian Bags:|r " .. tostring(message)) end
+local function Print(message) NS.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r " .. tostring(message)) end
 local function RGB(t) return t[1], t[2], t[3] end
 local function SetSearch(text)
   if NS.SharedSearch then NS.SharedSearch.Set("fancy-filter", text or "")
@@ -1651,7 +1651,7 @@ local function BuildOptions()
   -- Bank sizing and Developer / Maintenance retain their established local
   -- spacing and are shifted down below the newly ordered view settings.
   local lowerContents=CreateFrame("Frame",nil,contents)
-  lowerContents:SetSize(contents:GetWidth(),2100)
+  lowerContents:SetSize(contents:GetWidth(),1590)
   lowerContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-540)
 
   local prefs=NS.PanelPreferences
@@ -1742,16 +1742,12 @@ local function BuildOptions()
     for _,fn in ipairs(groupControls) do fn() end
   end
 
-  Header(lowerContents,"DEVELOPER & MAINTENANCE",-1603)
-  local diagnosticsButton=MenuAction(lowerContents,-1632,"Diagnostics  /  Advanced Tools",function()
-    ShowPage("diagnostics")
-  end)
-  diagnosticsButton:SetWidth(380)
-  local diagNote=MakeLabel(lowerContents,
-    "Commands and maintenance actions are available on a separate page.",
-    "GameFontHighlightSmall",{.65,.72,.78})
-  diagNote:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,-1665)
-  contents:SetHeight(2550)
+  -- Release interface: developer/maintenance commands remain installed,
+  -- but the diagnostics page has no visible settings navigation entry.
+  -- Last setting ends at y=-540-1540 (plus its button height).
+  -- Keep only a modest bottom margin; the developer page no longer has
+  -- a Settings navigation entry, and must not reserve empty scroll space.
+  contents:SetHeight(2130)
   if NS.CategoryManager then
     NS.CategoryManager.Initialize(categoriesBody,{
       canEdit=function()

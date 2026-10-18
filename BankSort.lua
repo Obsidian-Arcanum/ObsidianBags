@@ -22,7 +22,7 @@ local function Finish(s,reason,failed)
   history.last="bank Sort "..(failed and "STOPPED" or "completed")..
     ": "..s.steps.." physical merges; "..tostring(reason)
   if ns.BankPanel and ns.BankPanel.FinishBankSort then ns.BankPanel.FinishBankSort() end
-  print("|cff8ad9ffObsidian Bags:|r "..history.last)
+  ns.ChatFeedback.Print("|cff8ad9ffObsidian Bags:|r "..history.last)
 end
 local function CanContinue()
   if not ns.BankModel or not ns.BankModel.CanRead() or not CursorClear() or
