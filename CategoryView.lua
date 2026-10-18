@@ -92,12 +92,91 @@ function C.Hide()
   for _,arrow in ipairs(arrows) do arrow:Hide() end
   for _,tile in ipairs(summaryTiles) do tile:Hide() end
 end
+-- Combat uses a SECOND secure canvas. When its driver restores the normal
+-- canvas, a cursor-held item deliberately defers Core's physical reconciliation.
+-- Preserve only PRE-COMBAT cosmetic visibility so headings/summary art don't
+-- stay invisible until the cursor is returned. No layout or item data changes.
+local combatPresentation
+function C.SuspendPresentation()
+  if combatPresentation then return end
+  local frames={}
+  local function Save(f)
+    if f then
+      frames[#frames+1]={frame=f,shown=f:IsShown(),
+        alpha=f.GetAlpha and f:GetAlpha() or 1}
+    end
+  end
+  for _,f in ipairs(labels) do Save(f) end
+  for _,f in ipairs(arrows) do Save(f) end
+  for _,f in ipairs(summaryTiles) do Save(f) end
+  combatPresentation=frames
+  C.Hide()
+end
+function C.ResumePresentation()
+  if not combatPresentation then return end
+  local frames=combatPresentation
+  combatPresentation=nil
+  for _,record in ipairs(frames) do
+    local f=record.frame
+    if f.SetAlpha then f:SetAlpha(record.alpha) end
+    if record.shown then f:Show() else f:Hide() end
+  end
+end
 
 local function PhysicalOrder(a,b)
   local ea,eb=a.entry,b.entry
   if ea.bagID~=eb.bagID then return ea.bagID<eb.bagID end
   if ea.slotID~=eb.slotID then return ea.slotID<eb.slotID end
   return a.originalIndex<b.originalIndex
+end
+
+-- A Category Sort is a VIRTUAL snapshot of logical token order. Never sort
+-- categories by changing the physical bag layout or modifying Standard's
+-- independently saved layout. Once captured, these ranks remain stable while
+-- the serialized physical optimizer places specialty items and merges stacks.
+-- Physical locations and transient stack counts must not bounce the icons.
+function C.SortVisualOrder(layout,entries,reverse)
+  if type(layout)~="table" or type(entries)~="table" or
+      not ns.SortPolicy or not ns.SortPolicy.SortTokens then return false end
+  local buckets,rank={},{}
+  for index=1,#layout do
+    local token=layout[index]
+    local entry=token and token~=false and entries[token] or nil
+    if entry and entry.itemID then
+      local id="misc"
+      local marked=DB().items and DB().items[token] and
+        DB().items[token].junk==true or false
+      if ns.CategoryClassifier and ns.CategoryClassifier.VisibleForStack then
+        local ok,result=pcall(ns.CategoryClassifier.VisibleForStack,entry,marked)
+        if ok and type(result)=="string" then id=result end
+      end
+      buckets[id]=buckets[id] or {}
+      buckets[id][#buckets[id]+1]=token
+    end
+  end
+  for _,tokens in pairs(buckets) do
+    local sorted=ns.SortPolicy.SortTokens(tokens,entries,DB().items)
+    if reverse then
+      for l=1,math.floor(#sorted/2) do
+        local r=#sorted-l+1
+        sorted[l],sorted[r]=sorted[r],sorted[l]
+      end
+    end
+    for index,token in ipairs(sorted) do rank[token]=index end
+  end
+  DB().categorySortRanks=rank
+  return true
+end
+
+local function SortedVisualOrder(a,b)
+  local ranks=DB().categorySortRanks
+  if type(ranks)=="table" then
+    local ar,br=ranks[a.token],ranks[b.token]
+    if ar and br and ar~=br then return ar<br end
+    if ar~=nil and br==nil then return true end
+    if br~=nil and ar==nil then return false end
+  end
+  return PhysicalOrder(a,b)
 end
 
 -- The shared OneStack engine groups identical item IDs only within the SAME
@@ -111,6 +190,13 @@ end
 -- optional mutation is NONE: the DB is read for presentation flags only.
 function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap,forceExpanded)
   local buckets,free={},{}
+  -- These are REAL empty physical slots in quivers, Soul Bags or the dedicated
+  -- reagent bag. Assign them to UTILITY in both the normal Category View and
+  -- the PREPARED expanded combat layout. CombatExpanded.Prepare runs only out
+  -- of combat; every native physical slot remains individually present and
+  -- bound to its original bag/slot, with no in-combat category reflow.
+  local utilityFree={}
+  local classified={}
   local defs=ns.CategoryClassifier and ns.CategoryClassifier.Definitions() or
     {{id="misc",label="UNCATEGORIZED"}}
   for _,def in ipairs(defs) do buckets[def.id]={} end
@@ -137,35 +223,86 @@ function C.Build(layout,entries,blanks,mainCap,ammoCap,reagentCap,forceExpanded)
         if (token and token~=false) or entry.itemID then
           local target="misc"
           if ns.CategoryClassifier and ns.CategoryClassifier.ForItem then
-            local ok,category=pcall(ns.CategoryClassifier.VisibleForItem or ns.CategoryClassifier.ForItem,entry)
-            if ok and buckets[category] then target=category end
+            -- Classification is cached per redraw, but SELL is a per-token
+            -- intent: identical marked and unmarked links must not share a
+            -- category cache entry or One Stack group.
+            local marked=token and token~=false and DB().items and
+              DB().items[token] and DB().items[token].junk==true or false
+            local key=tostring(entry.itemID).."|"..tostring(entry.link or "")..
+              "|"..tostring(entry.classID).."|"..tostring(entry.subclassID)..
+              "|"..tostring(entry.quality).."|"..tostring(marked)
+            if classified[key] then
+              target=classified[key]
+            else
+              local classifier=ns.CategoryClassifier.VisibleForStack or
+                ns.CategoryClassifier.VisibleForItem or ns.CategoryClassifier.ForItem
+              local ok,category=pcall(classifier,entry,marked)
+              if ok and buckets[category] then target=category end
+              classified[key]=target
+            end
           end
           local bucket=buckets[target] or buckets.misc
           bucket[#bucket+1]=descriptor
         else
-          free[#free+1]=descriptor
+          if kind=="ammo" or kind=="reagent" then
+            utilityFree[#utilityFree+1]=descriptor
+          else
+            free[#free+1]=descriptor
+          end
         end
       end
     end
   end
 
+  -- A hidden UTILITY category must never make real native slots disappear.
+  -- MISCELLANEOUS is mandatory and remains the presentation-only fallback.
+  -- No physical allocation, virtual Standard order or category preference is
+  -- mutated by routing the empty tiles.
+  if #utilityFree>0 then
+    -- ForceExpanded deliberately bypasses cosmetic collapse and One Stack;
+    -- the prebuilt combat canvas still exposes all native utility blanks.
+    local target=buckets.ammunition and buckets.ammunition or buckets.misc
+    for _,descriptor in ipairs(utilityFree) do target[#target+1]=descriptor end
+  end
+
   local descriptors,sections={},{}
+  local visibleFreeCount=0
   for _,def in ipairs(defs) do
     local bucket=buckets[def.id]
     if bucket and #bucket>0 then
-      table.sort(bucket,PhysicalOrder)
+      table.sort(bucket,SortedVisualOrder)
       local collapsed=not forceExpanded and Collapsed(def.id) or false
-      local shown=(not forceExpanded and (collapsed or DB().oneStack==true)) and Summarize(bucket,def.id) or bucket
+      local shown
+      if collapsed and #utilityFree>0 then
+        -- A collapsed UTILITY (or hidden-UTILITY MISC fallback) reveals only
+        -- occupied One Stack summaries, not its physical empty tiles.
+        local occupied={}
+        for _,descriptor in ipairs(bucket) do
+          if descriptor.entry and descriptor.entry.itemID then
+            occupied[#occupied+1]=descriptor
+          end
+        end
+        shown=Summarize(occupied,def.id)
+      else
+        shown=(not forceExpanded and (collapsed or DB().oneStack==true)) and
+          Summarize(bucket,def.id) or bucket
+      end
       sections[#sections+1]={id=def.id,label=def.label,count=#shown,
-        originalCount=#bucket,collapsed=collapsed}
+        originalCount=#bucket,collapsed=collapsed,
+        -- If only empty utility cells were present, keep the header/arrow
+        -- available while collapsed so the user can expand them again.
+        headerOnly=collapsed and #shown==0 and #bucket>0}
       for _,descriptor in ipairs(shown) do
+        if descriptor.entry and not descriptor.entry.itemID then
+          visibleFreeCount=visibleFreeCount+1
+        end
         descriptors[#descriptors+1]=descriptor
       end
     end
   end
   table.sort(free,PhysicalOrder)
   lastFullFree=free -- physical empty destinations BEFORE collapse reduction
-  local occupiedCount=#descriptors
+  local occupiedCount=#descriptors-visibleFreeCount
   if #free>0 then
     -- A collapsed empty-slot section still exposes ONE authoritative real
     -- slot. No fabricated blank target and no loss of actual bag capacity.
@@ -202,7 +339,9 @@ function C.Plan(descriptors,occupiedCount,columns,cell,sections,categoryColumns,
   local y,rowHeight,index=0,0,1
   local valid={}
   for _,section in ipairs(sections or {}) do
-    if section.count>0 then valid[#valid+1]=section end
+    if section.count>0 or section.headerOnly then
+      valid[#valid+1]=section
+    end
   end
   for n,section in ipairs(valid) do
     local lane=(n-1)%lanes
@@ -222,7 +361,7 @@ function C.Plan(descriptors,occupiedCount,columns,cell,sections,categoryColumns,
       index=index+1
     end
     local sectionHeight=math.ceil(section.count/laneCols)*cell
-    rowHeight=math.max(rowHeight,sectionHeight)
+    rowHeight=math.max(rowHeight,sectionHeight,section.headerOnly and 12 or 0)
   end
   local height=#valid>0 and y+rowHeight or 0
   return {points=points,columns=laneCols*lanes,

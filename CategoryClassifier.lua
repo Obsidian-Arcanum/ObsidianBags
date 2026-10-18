@@ -50,6 +50,20 @@ local function DefaultMatches(canonical,id)
   if canonical==id then return true end
   return id=="consumables" and (canonical=="food" or canonical=="potions")
 end
+-- Temporary SELL intent has higher precedence than every ordinary category
+-- rule, including a custom exact-item assignment with priority 99. A hidden
+-- JUNK section still respects the user's explicit visibility preference by
+-- routing through the mandatory MISCELLANEOUS fallback instead.
+function C.VisibleForStack(entry,markedSell)
+  if markedSell then
+    for _,definition in ipairs(C.Definitions()) do
+      if definition.id=="junk" then return "junk" end
+    end
+    return "misc"
+  end
+  return C.VisibleForItem(entry)
+end
+
 -- A higher numeric priority always wins. Equal priorities use a stable
 -- specificity score (explicit ID > exact built-in > included/broad), then
 -- creation/default rank. The player's on-screen order is NEVER considered.

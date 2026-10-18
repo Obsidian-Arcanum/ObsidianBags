@@ -1,3 +1,347 @@
+Obsidian Bags v0.0.164 | permanent Forever locked-source Split proof
+
+Client-confirmed v160 locked-source Shift fallback is now ON by default;
+no command, profile change or SavedVariables migration required.
+
+The source proof conditions are the SAME as the client-tested v160 opt-in
+path: captured original native Shift click; matching held item + hyperlink;
+unchanged equipped bag and live source item; source locked at its original
+pre-split count >1; live separately VERIFIED EMPTY ordinary destination.
+One native exact-slot pickup; no retries or merge-first fallback.
+
+/obcombatdrop status             show physical split/cancel diagnostics
+/obcombatdrop trace              last 12 physical deposit decisions
+/obcombatdrop why                full refusal and captured source
+/obcombatdrop lockedsource off   disable JUST fallback, outside combat
+/obcombatdrop lockedsource on    re-enable fallback, outside combat
+/obcombatdrop cancel off         disable ordinary pickup cancellation OOC
+/obcombatdrop off                emergency stop for blank actions OOC
+
+Quiver/specialty empty-slot display grouping remains a deferred cosmetic
+matter: it is NOT changed by this release. No changes to native combat
+buttons, virtual category sort, physical optimizer, bank or transfers.
+
+Obsidian Bags v0.0.160 | gated Forever locked-source split trial
+
+The v0.0.159 client trace showed candidateIDs=1 locked=1, where the only
+matching physical source was locked and the ordinary split proof refused it.
+Do NOT treat that alone as evidence that a split is safe; only a pre-pickup
+recorded Shift source can qualify for this NEW opt-in experiment.
+
+/obcombatdrop lockedsource on   (outside combat, OFF by default)
+/obcombatdrop lockedsource off  (outside combat)
+/obcombatdrop why               (prints FULL last refusal and source snapshot)
+/obcombatdrop trace             (bounded last 12 events, now includes counts)
+
+When enabled, IF the previous strict proofs fail, a still-locked source with
+the same item and link, an exact recorded physical Shift pickup, and a stack
+count equal to the original pre-split count may authorize ONE native call to
+a verified EMPTY ordinary destination. No other case is relaxed.
+
+Native normal pickup cancellation, already-confirmed split destination
+selection, bank, physical optimizer, categories, combat frames, secure
+buttons and settings stay unchanged. Changes are session only.
+
+FOREVER TEST: enable the trial out of combat, Shift-split one previously
+refused Strider Meat/Feather/Tigerseye stack, and click blank inventory once.
+Check that a separate stack was physically created before repeating. Report
+/obcombatdrop why + /obcombatdrop status + /obcombatdrop trace whether
+it worked or failed. Disable trial OOC after test.
+
+Obsidian Bags v0.0.159: safe physical split refusal diagnostics.
+
+- No change to split deposit permission checks or native item operations.
+- Retains v157 client-confirmed cancellation and split deposits and v158
+  conservative secondary Shift-source proof (no successes client-reported yet).
+- /obcombatdrop trace prints the last 12 item deposit decisions (item IDs,
+  click/drag event, refused reason, and up to four same-ID physical slot
+  candidates with count/lock/link-equality), even after successful actions.
+- /obcombatdrop status now displays lastRefusal separately from most recent
+  success. Does not query additional inventory information on each attempt.
+- No new in-game SavedVariables, settings, cursor clearing, protected button
+  changes, category redraw changes, or physical placement behavior.
+
+FOREVER QA: In combat, attempt Shift-split + blank background with the
+previously failing Strider Meat, Sunscale Feather and Tigerseye separately.
+After those attempts, run /obcombatdrop trace and send the result, regardless
+of whether you test a known-working item afterward. Also send
+/obcombatdrop status for context. Do not force a drop into an occupied slot.
+
+Obsidian Bags v0.0.158: combat split remainder diagnostics and guarded fallback.
+
+- Keeps v157 native combat pickup/drag cancellation and established split deposit.
+- Some Forever item sources are reported LOCKED while a split cursor is held.
+  The ordinary verified physical split remainder path runs unchanged first.
+- If that strict source check fails, an additive fallback permits a deposit
+  ONLY after an original Shift-press snapshot proves the same physical source
+  now contains fewer items with matching identity/link and unchanged equipped
+  bag. The source may be LOCKED; a changed or same-count source is refused.
+- /obcombatdrop status now reports locked/link/count evidence and whether the
+  more conservative per-source Shift fallback was used.
+- IMPORTANT: prepared native combat buttons cannot be reanchored while in
+  combat. Newly emptied slots can remain visually beneath their precombat
+  category, and newly filled prior empty slots under AVAILABLE SLOTS until
+  after combat and the next full redraw. Item action targets remain real.
+
+FOREVER QA: try split/drop for Strider Meat, Sunscale Feather and Tigerseye,
+then previously working Linen Cloth and Light Leather, and normal pickup/drag
+cancellation. Send /obcombatdrop status especially after any failed split.
+If failures persist, we will diagnose the detailed read-only evidence rather
+than weakening the protected transaction checks.
+
+Obsidian Bags 0.0.157: combat blank-background cursor handling integrated.
+
+- Combat Shift-split -> click blank inventory background: one exact verified
+  empty physical ordinary-bag slot receives the separate stack, as in v153.
+- Ordinary native pickup -> click or release on blank combat background:
+  the separate v156 Forever-tested native ClearCursor cancellation is now ON
+  by default. It only runs with an eligible pre-pickup native-button hover/
+  press snapshot and a matching non-Shift held cursor item, returning the
+  original pickup to Blizzard's source rather than relocating it.
+- The cancel path never deliberately acts on a captured Shift split, a foreign
+  cursor, an unmatched identity, changed equipped bag, or unreadable origin.
+- No synthetic click, no manual physical move on cancellation, no retries,
+  no stored preference, and no changes to native combat slot scripts.
+- `/obcombatdrop status` shows both split-deposit and cancellation counters.
+  `/obcombatdrop cancel off` disables only native pickup cancellation, leaving
+  verified split deposits enabled (OUT of combat; session only).
+  `/obcombatdrop off` disables BOTH combat blank-content actions (OUT of combat).
+  `/obcombatdrop on` re-enables BOTH outside combat.
+
+FOREVER CLIENT TEST (v157): in combat, test a Shift-split onto blank content,
+then full item pickup -> blank click and full item drag -> blank release.
+Confirm the full item returns to the SAME source slot and split creates an
+independent physical stack; verify B open/close and layout restoration. If a
+protected warning appears, STOP and use `/obcombatdrop off` after combat.
+
+------------------------------------------------------------
+
+Obsidian Bags 0.0.156: opt-in experimental native full-pickup cursor cancellation via ClearCursor; exact v153 combat split deposits preserved. /obcombatdrop canceltest on|off outside combat.
+OBSIDIAN BAGS v0.0.153 | INTEGRATED COMBAT BLANK-BACKGROUND DIRECT DEPOSITS
+STATUS: LOCALLY TESTED ONLY; REQUIRES FOREVER 1.60.1 CLIENT TEST.
+
+- Client-proven v152 direct physical empty-slot pickup now runs automatically
+  when clicking genuine blank content in the expanded combat inventory.
+  Hardware click/drag dispatch only; no insecure synthetic clicks, cursor
+  clears, auto-placement merges, virtual/physical sort changes or retries.
+- Live physical destination scan: Backpack (0), ordinary equipped bags (1-4)
+  where subclass=0 and container family=0. Quivers, soul bags, reagent bags
+  and uncertain specialty containers are NOT selected as destinations.
+- Source evidence: the identical held item's partial-stack remainder must
+  remain readable in an equipped bag (0-5); otherwise fail closed. This is a
+  conservative safety gate, not a full provenance proof for unusual duplicate
+  full-stack pickups. Use native real slots for unsupported scenarios.
+- Two independent reads verify the exact physical empty destination; one
+  C_Container.PickupContainerItem(bagID,slotID) may occur on the hardware
+  input event. A short pending guard prevents click+drag double dispatch and
+  reports a final read of the actual destination without replaying moves.
+- Slash `/obcombatdrop status` shows attempts/verified/refusals/errors;
+  `/obcombatdrop off` or `on` disables/enables for this session OUT of combat.
+  No new saved settings, native slot scripts, or bank/sorting modifications.
+- v147-152 /obdrop and /obplace experimental Lua modules are retired from the
+  installed package and remain recoverable from historical version ZIPs.
+
+CLIENT TEST: first use two inexpensive splits in combat, depositing against
+  true blank expanded canvas. Verify distinct physical and virtual stacks,
+  then try a normal generic item and an ordinary equipped bag when Backpack
+  has no empty slots. Check native slot drop, combat B, split, category arrows
+  and normal restore. If protected-action warning appears, use `/obcombatdrop
+  off` after combat, stop testing and send the exact warning/status.
+
+------------------------------------------------------------
+
+Obsidian Bags v0.0.146 - SELL-to-JUNK category override and Standard virtual sort tail (Forever test build)
+
+- Category View Sort now commits a stable, immediate per-category visual token
+  order before running the existing guarded physical optimizer. It does NOT
+  physically rearrange ordinary bags and does NOT overwrite Standard order.
+- During the physical optimization, verified specialty placement and compatible
+  partial-stack merges continue using the existing serialized transaction system.
+- Repeat refreshes while an auto physical batch is running reuse the already
+  prepared secure combat canvas; a final refresh rebuilds it when the batch
+  finishes. Every physical native slot remains mapped to its original bag/slot.
+- Identical item variants share classification computations within one Category
+  redraw; custom category edits take effect on the next redraw.
+- IMPORTANT: combat empty-BACKGROUND drop is still not fixed in this build.
+  Use a genuine physical empty slot during lockdown. A separate secure-native
+  input change needs a dedicated Forever-client experiment; never route an
+  unverified combat cursor through an insecure synthetic drop handler.
+- No edits to the bank, native cursor state machine, physical executors,
+  the secure-combat templates, or current saved layout migration.
+
+OBSIDIAN BAGS v0.0.144 | BANK POP-OUT STABILITY + SHARED OPACITY + MAIN POP-OUT CURSOR RETURN
+STATUS: LOCALLY SOURCE TESTED; FOREVER 1.60.1 CLIENT VERIFICATION REQUIRED.
+
+- MAIN One Stack: when a genuine native popup-origin item drag is released over
+  BLANK main bag item content (not an actual item cell, category control,
+  inspector, or bank), a read-only hit test may permit returning only the
+  verified original physical stack cursor via ClearCursor(). No physical move
+  or saved visual mutation; foreign or unverifiable cursors remain untouched.
+  Existing native button OnClick/OnDragStart and secure combat remain intact.
+- BANK One Stack inspector: initial popup position is anchored to a constant
+  bank-window relative offset rather than the changing category summary tile.
+  A post-transfer category refresh cannot drag the inspector across the bank.
+- SHARED opacity: the existing main Options Background opacity slider now
+  repaints the bank background instantly, using its existing same saved skin
+  value; no independent bank opacity option or saved variable is created.
+
+CLIENT TEST: out of combat, use inexpensive non-SELL physical stacks.
+1. Main One Stack: drag a real popup stack onto BLANK main item content.
+   Expect cursor cleared and unchanged physical quantity/slot; popup stays open.
+   Then drag onto explicit compatible stacks, into bank, and onto action bars:
+   ordinary native/physical behavior must be unchanged. Shift-splits still work.
+2. Bank One Stack: open an inspector, transfer one physical stack from it to
+   main inventory. Popup should stay where originally opened through refresh.
+3. With bank + main open, adjust Background opacity through 0%, 50%, 100%
+   in Fancy and Basic. Both backgrounds should repaint together immediately.
+4. Smoke-test bank Sort, bank/background transfers, main drag modes and
+   the secure combat open/restore sequence.
+
+-----------------------------------------
+
+OBSIDIAN BAGS v0.0.143 | BANK DRAG CANCELLATION + INSPECTOR BACKGROUND RELEASE
+STATUS: LOCAL SOURCE TESTED; REQUIRES FOREVER 1.60.1 CLIENT TEST.
+
+- Verified native-bank source cancellation: if an extra right-click causes Blizzard
+  to clear the held bank cursor during a left-drag, NEVER commit a visual swap
+  or physical transfer. Wait for empty cursor AND exact original physical stack
+  (including token, location, count, link, GUID when available) to be verified,
+  then discard only the stale drag session and let new drags start immediately.
+  If identity is not verified, remain blocked and report why; never clear an
+  unrecognized physical cursor.
+- Bank One Stack popup drag captures its actual source index at drag start,
+  preventing a later popup refresh from changing which stack is resolved.
+- A narrow bank-origin drag release watch now resolves a genuine observed left
+  mouse release even if the source OnDragStop or main receiver was skipped by
+  Forever when the destination was blank carried-inventory content. Physical
+  deposit still goes through the existing CrossTransfer checks.
+- /vb bank status now reports cursorSession and dragSession for diagnostics.
+- Unchanged: full bank sort/consolidation, cursor provenance, guarded physical
+  transfer worker, main native button scripts, secure combat layout, settings.
+
+CLIENT TEST (use low-value items, out of combat, initially empty cursor):
+1. Drag a physical stack from a bank One Stack popup to blank ordinary carried
+   inventory background, then to explicit empty slots; confirm physical counts
+   and cursor cleared, popup remains available.
+2. Left-hold drag an ordinary BANK item, press right-click while still holding
+   left, then release left. Verify the item returns physically, new drags work
+   without banker reopen; no unintended virtual swap or transfer occurred.
+3. Repeat normal single-click bank swap, hold-drag bank to bag, both directions,
+   split into blank bank area, Sort/merge and popup inter-stack merge.
+4. If still blocked, collect /vb bank status and /vb transfer trace show; do
+   not clear or retry a held foreign cursor on a partial transaction.
+5. Confirm main native bag drags and combat opening/restoration unaffected.
+
+-----------------------------------------
+
+OBSIDIAN BAGS v0.0.142 | BLANK MAIN-INVENTORY BANK WITHDRAWAL TARGET
+STATUS: SOURCE-VALIDATED ONLY; AWAITING FOREVER 1.60.1 CLIENT TEST.
+
+- Bank-origin drag to genuine BLANK carried-inventory content now chooses the earliest real ordinary virtual empty cell, just as bank-background deposits work in the reverse direction. Existing source provenance and CrossTransfer's authoritative physical slot recheck remain unchanged.
+- Explicit occupied or available-slot drops retain their original exact-target behavior; main Category / Standard read-only summaries, section headers, One Stack pop-out and top/bottom window controls cannot masquerade as blank targets.
+- No changes to native pickup preference, temporary pickup safety checks, bank transaction engine, combat modules, sort, settings/profile links, or bank visuals.
+
+CLIENT TEST (inexpensive items, empty cursor, out of combat):
+1. At a banker, hold-drag a BANK item to blank space within the carried inventory item region, not an icon. Confirm it arrives in the first genuinely empty ordinary virtual slot; cursor clears.
+2. Repeat with Standard and Category main views (including Available Slots collapsed). Verify bank source decreased, carried amount increased, and counts remain correct.
+3. Confirm an explicit visible empty slot still receives the bank item, and an occupied same-item stack still merges into that exact target.
+4. Try blank space over category header or an open One Stack pop-out: should NOT deposit behind UI. Do a quick bag-to-bank blank-background deposit and physical Bank Sort.
+5. Confirm /vb pickup status saved=true and main native drag still works. Combat window opening/restoration smoke test.
+If a cursor remains held or a transfer stops, do not spam clicks; capture /vb bank status, /vb transfer trace show and /vb pickup status.
+
+-----------------------------------------
+
+OBSIDIAN BAGS v0.0.138 | BANK CLICK PICKUP, CARRIED-TO-BANK DRAG & MAIN POPOUT SPLIT FIX
+STATUS: LOCALLY VALIDATED; REQUIRES WOW FOREVER 1.60.1 CLIENT CONFIRMATION.
+Previous confirmed successes in v0.0.137: real native bank drag cursor, background/split deposits, bank Sort physical merging, pop-out staying open, bank -> bag transactions. Client-reported regressions: a bank single left click flashed but did not leave a held native cursor, and ordinary carried-bag drags could fail to deposit into the bank.
+
+CHANGES:
+- The bank single-click pickup now arms a separate second-press receiver over the carried inventory. It no longer treats the original bank click's already-released mouse button as the destination release. Subsequent bank button/blank clicks continue through the verified native cursor return, virtual token move, or guarded physical coordinator. Hold-and-drag mode retains immediate release.
+- The bank destination can explicitly complete a carried-inventory native drag through its existing FinishNativePickupTrial identity/return verification when Forever delivers a bank OnReceiveDrag/OnMouseUp without a reliable source OnDragStop. No physical action is performed without the original guarded source verification.
+- Carried->bank drop target discovery permits an actual, physical empty bank cell selected as the earliest blank from bank background, even if its ordinary button is hidden by a collapsed Category View. Hidden occupied stacks remain forbidden as synthetic destinations.
+- Read-only One Stack summary tiles and the physical-stack inspector are not treated as empty bank background for drop routing. This prevents accidentally depositing into an unrelated bank blank when dropping onto a grouped item.
+- Main carried-inventory One Stack inspector stays visible during a split initiated from its own physical pop-out, through the native quantity dialog, held split cursor and subsequent drop. After the split finishes, future ordinary outside clicks still dismiss the popup.
+- All validated v137 bank physical consolidation, bank model, physical transaction modules, bank popup and native drag behavior are preserved. Secure combat modules and secure window architecture remain unchanged. Core.lua receives only a small bank-target callback addition and a click-specific bank receiver mode.
+
+LOCAL CHECKS:
+- 55 Lua modules compiled under Lua 5.4, including the 200-active-local-sensitive Core.lua.
+- Executed exact Core bank-drop receiver implementation: no immediate click auto-release; second press releases exactly once; legacy drag release unchanged; split recipient still waits for deliberate press.
+- Executed exact BankPanel.GetCrossTarget with hidden genuine blank accepted, hidden occupied target refused, outside-scroll blank refused, and visible occupied selection preserved.
+- Executed actual main StackPopover.OnUpdate outside-dismiss path: split dialog + held cursor + deposit preserve popup, normal later outside click closes it.
+- Re-ran actual BankSort+StackWork stack consolidation tests: x5/x6/x10 -> x20/x1, second Sort physical no-op, variant separation, quantity conservation, failure stop.
+- ZIP integrity/root/TOC/load-order verification completed. Does not substitute for an in-client secure/UI timing test.
+
+CLIENT TEST ORDER (use inexpensive items and inspect cursor if an operation refuses):
+1. At a banker, single LEFT click a bank item, confirm the native item-arrow cursor STAYS held. Click another bank cell to virtually move; click the same source again to cancel/return. Test with main bag open and then closed.
+2. Hold/drag an ordinary bank icon into another bank tile, then from bank to carried bag. Confirm v137 native cursor remains and no physical source changes for purely virtual moves.
+3. Hold/drag an ordinary carried inventory item to a VISIBLE empty bank tile, then repeat onto BLANK bank background, including with Available Slots collapsed. Confirm one verified real physical deposit, the original carried source decreases, and cursor clears. Try one safe occupied cross-window exchange.
+4. Split an item from the main One Stack popup using Shift-left; deposit held part into carried inventory; the main popup should stay open and update its physical stacks. Normal outside clicks afterward should still close it.
+5. Quick bank Sort twice, bank One Stack pop-out merge/split, right-click withdraw and one combat B-key open/restore smoke test.
+
+IF AN ITEM STAYS ON CURSOR: do not repeatedly click or blindly ClearCursor. Capture `/vb bank status`, `/vb transfer trace show`, `/vb stack status`, and `/vb pickup status` if available. v0.0.137 remains the rollback for its client-verified successful features.
+
+-----------------------------------------
+
+OBSIDIAN BAGS v0.0.137 | BANK PHYSICAL SORT + ITEM CURSOR / DROP / ART PARITY
+STATUS: LOCALLY TESTED; NEEDS WOW FOREVER 1.60.1 CLIENT TEST.
+Previous bank baseline: v0.0.136 user-tested for bank popup icon merges; v0.0.135 confirmed visual Bank Sort in Standard & Category.
+Combat baseline v0.0.130g, all main and secure combat Lua files left untouched.
+
+CHANGES:
+- Bank occupied icons and bank One Stack inspector icons now use full-size art with no 2px inset.
+- Bank Sort retains existing BankModel.Sort visual order and additionally initiates a bank-only, serialized, verified exact-link physical partial-stack merge session. BankModel and existing bag batch sorter unchanged. StackWork verifies source/target, known max stack size, real cursor and exact after-deposit conservation. Replans from live bank after each confirmation, stops on any ambiguous failure, 64-merge cap. The bank can sort with the main bag window closed.
+- Physical bank-origin pickup for bank icon left-click selection and dragging now uses the real Blizzard item cursor, not a cosmetic ghost texture or SetCursorVirtualItem. Bank-owned click/drop finalization authenticates held source, verifies cursor return, waits for same physical source/slot/token/count before a virtual placement or existing physical coordinator transfer. Unverified cursor is never blindly cleared.
+- Dropping a real carried item onto blank bank content chooses earliest verified physical empty bank slot; same for a split cursor and a bank-origin virtual drag to blank bank content. No synthetic empty bank slots. Existing explicit empty-cell target behavior retained.
+- Bank One Stack pop-out stays open during a verified merge and refreshes source icons and counts from live bank. Even if only one physical source remains it keeps a single icon until the user closes it.
+- Bank Sort status appended to `/vb bank status`; existing physical transfers and bank panels preserved.
+
+CLIENT TEST SEQUENCE (use inexpensive expendable stacks first):
+1. Check Bank icon art and popup icon art visually beside main bag. No extra inset border.
+2. With main bag open: bank native left-click item cursor icon with yellow arrow; click another bank tile to virtually swap; confirm no held item and no physical corruption. Test native drag to occupied and empty bank positions, including popup drag.
+3. Click a bank item again to return native held item to its original physical location. Close bank while a bank click-pickup is active; cursor must return.
+4. Test split cursor and normal bag-to-bank physical cursor released onto BLANK bank space (not an empty cell). Verify earliest real empty bank slot selected and source/destination amounts preserved.
+5. Bank Sort 3 partial stacks (e.g. x5/x6/x10), verify physical consolidation, last bank Sort status confirms verified merge and second sort no-op. Test both bank views, collapse and One Stack while idle.
+6. Bank pop-out stack-to-stack merge; it should remain open and update physical stack icons/counts. Test split/withdraw and bank↔bag transfer after.
+7. Quick main inventory Sort and existing secure combat open/split/restore smoke test.
+
+SAFETY: Stop immediately and capture `/vb bank status` and `/vb stack status` if the native cursor remains held, a physical merge stops, an item is missing, or a protected-action warning occurs. Do not repeatedly click Sort after a failed physical verification. v0.0.136 ZIP is the immediate rollback; v0.0.130g still combat-verified.
+
+-----------------------------------------
+
+OBSIDIAN BAGS v0.0.134 | BANK ONE STACK INSPECTOR STATE REPAIR
+STATUS: LOCALLY VALIDATED; REQUIRES WOW FOREVER CLIENT TEST.
+Latest user-tested bank: v0.0.133 (Category collapse-to-unique, bank settings,
+stack pop-out split reported working; pop-out left-click One Stack bug found).
+Combat client-verified baseline: v0.0.130g. Combat sources unchanged.
+
+NEW IN v0.0.134:
+- Left-clicking a stack in a bank One Stack pop-out selects/highlights that
+  physical source INSIDE the inspector only. It no longer silently switches
+  off the saved Bank One Stack setting or expands all bank item tiles.
+- Right-click withdrawal and Shift-left splitting retain their verified
+  guard/delegation paths. Bank model, transactions, categories and combat
+  modules are not modified.
+- Pop-out physical stack rows now say "Stack N  xCount", not bank-slot
+  coordinates such as "6-9" or "6-17". Normal item tooltip no longer shows
+  a physical bank slot diagnostic line.
+- For an intentionally unaggregated view, turn Bank One Stack OFF using
+  its visible setting. A collapsed category still groups unique items.
+
+TEST AT A LIVE BANKER:
+1. Bank One Stack ON, inspect duplicate stacks in either view. Click two
+   physical rows: pop-out stays open and only the selected row highlights;
+   aggregated layout and switch stay ON throughout.
+2. Shift-left split, right-click withdraw and an ordinary bank↔bag transfer.
+3. Toggle One Stack OFF once; ON once; switch views and /reload to verify
+   preference and layout persistence. Check pop-out row text for slot labels.
+4. With One Stack OFF, collapse an item category, inspect grouped stacks;
+   no view-mode/settings change should occur from selecting a row.
+5. Bank search, tabs, cached view and a short main-combat smoke test if time.
+
+-----------------------------------------------------------------------
+HISTORICAL RELEASE NOTES (v0.0.132 entry retained verbatim below)
+-----------------------------------------------------------------------
+
 OBSIDIAN BAGS v0.0.132 | VIRTUAL BANK RESPONSIVE CATEGORY LAYOUT
 STATUS: LOCALLY VALIDATED; NEEDS WOW FOREVER CLIENT TEST.
 Latest bank Category View foundation: v0.0.131 CLIENT-VERIFIED for display,
@@ -560,3 +904,49 @@ v0.0.130f - One Stack cosmetic remnant correction (NEEDS FOREVER CLIENT TEST)
 - The observed remnant was a partly visible x60 aggregate icon. Its exact
   visibility/protection failure is inferred from the screenshot and source,
   not yet proven in the Forever client.
+
+## v0.0.146 (local candidate; Forever client test required)
+- Category View: per-token SELL marking now overrides ordinary and custom category
+  priority and places the marked stack into JUNK on refresh. Unmark restores
+  its normal classification. The hidden-JUNK preference uses misc fallback.
+- Standard Sort: SELL-marked and gray-quality junk stacks occupy the last
+  occupied VIRTUAL positions of their physical storage section, immediately
+  before real blank slots, even with reverse sorting enabled. Collapsed
+  Standard View preserves this order while keeping one real empty cell.
+- No automatic physical relocation of marked items. Existing SELL vendor and
+  merge safeguards remain unchanged.
+- Intermittent Blizzard blocked-action popup on repeated native split is
+  not source-proven; split/secure handlers unchanged pending taint evidence.
+
+
+## v0.0.147 (SECURE FEASIBILITY PROBE; not a blank-drop fix)
+- Investigates whether Forever 1.60.1 exposes any supported secure execution
+  route to a dynamic blank-background combat deposit.
+- Out-of-combat `/obdrop arm` prepares an optional detached combat-only
+  secure click/drag input probe. Secure snippets print read-only API
+  availability/drag type; they NEVER return a pickup action or handle an item.
+- `/obdrop disarm` removes the probe out of combat. No SavedVariables.
+- Existing secure dual-inventory combat presentation, bank, sorting, and native
+  item scripts are completely unchanged from the client-verified v0.0.146.
+- User should NOT drop real items on the probe expecting a transfer: it is a
+  diagnostic, and real item cursors remain Blizzard/Forever-owned.
+
+
+## v0.0.148 (READ-ONLY SECURE SLOT-STATE DIAGNOSTIC)
+- Extends the v147 detached /obdrop secure-input probe with three prepared physical
+  native button references: up to two actually empty slots and one occupied slot.
+- /obdrop arm out of combat captures genuine bag:slot references and precombat
+  emptiness snapshots, then makes the diagnostic button visible in combat.
+- Combat probe left clicks read physical button GetID/parent IDs, IsShown,
+  attributes type/item/itemID/count and GetItemID method availability. Compare
+  before/after a normal native deposit into a sampled originally empty slot.
+- The probe never moves items and never writes to prepared native item buttons.
+  Its precombat snapshots are NOT current occupancy and are NOT used for routing.
+- No secure combat binding, slot layout, item OnClick, physical optimizer or bank
+  code changed. /obdrop disarm outside combat.
+
+0.0.164: Category View out-of-combat utility-only empty slots remain in UTILITY (reagent, quiver, Soul Bag), not general AVAILABLE SLOTS. Collapsed utility hides physical blanks and keeps occupied One Stack summaries; expanding restores native empty tiles. Hidden UTILITY falls back to mandatory Miscellaneous rather than making slots inaccessible. The precomputed secure combat presentation path and all physical interaction modules are unchanged.
+
+0.0.164: Category View's OUT-OF-COMBAT secure combat-canvas preparation now places genuine empty quiver, Soul Bag and dedicated reagent-bag slots under UTILITY rather than general AVAILABLE SLOTS. All actual combat frame scripts, cursor/split/drop mechanics and physical token mappings remain unchanged. Secure native physical slots cannot reflow in combat after contents change; normal layout reconciles after combat.
+
+0.0.164: CombatExpanded's independent closed-bag/coverage-repair physical descriptor path now assigns real empty quiver and dedicated reagent slots to UTILITY instead of generic AVAILABLE. Adds read-only prepPath/utilityEmpty/generalEmpty status for in-client verification. No combat runtime secure control or physical input changes.

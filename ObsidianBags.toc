@@ -2,13 +2,15 @@
 ## Title: Obsidian Bags
 ## Notes: Obsidian Arcanum inventory organizer. Standard and multi-column category views, One Stack, bank and SELL tools.
 ## Author: Obsidian Arcanum
-## Version: 0.0.133
+## Version: 0.0.164
+## IconTexture: Interface\AddOns\ObsidianBags\Media\Fancy\Bag.tga
 ## Dependencies: Syndicator
 ## SavedVariables: VirtualBagsLabProfiles, VirtualBagsLabViewCache
 ## SavedVariablesPerCharacter: VirtualBagsLabDB
 
 Profiles.lua
 PanelPreferences.lua
+BankViewPreferences.lua
 CharacterBrowser.lua
 SortPolicy.lua
 SearchPolicy.lua
@@ -29,6 +31,7 @@ NativeFrames.lua
 BankModel.lua
 CrossTransfer.lua
 StackWork.lua
+BankSort.lua
 AmmoTransfer.lua
 ReagentTransfer.lua
 SlotArt.lua
@@ -49,6 +52,8 @@ BankStackPopover.lua
 FrameSlices.lua
 CombatPreview.lua
 CombatNative.lua
+CombatCursorCancel.lua
+CombatBlankDeposit.lua
 CombatExpanded.lua
 CombatBagBinding.lua
 SortProjection.lua

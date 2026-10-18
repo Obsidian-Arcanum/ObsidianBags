@@ -492,12 +492,9 @@ local function SortVisualOrder()
         tokens[#tokens + 1] = token
       end
     end
-    local ordered = NS.SortPolicy.SortTokens(tokens, viewEntries)
+    local ordered = NS.SortPolicy.SortTokens(tokens,viewEntries,db.items)
     if db.reverseSort then
-      for left=1,math.floor(#ordered/2) do
-        local right=#ordered-left+1
-        ordered[left],ordered[right]=ordered[right],ordered[left]
-      end
+      NS.SortPolicy.ReverseNonJunk(ordered,viewEntries,db.items)
     end
     while #ordered < count do ordered[#ordered + 1] = false end
     return ordered
@@ -542,7 +539,8 @@ function Lab:PrintSortPreview()
         tokens[#tokens + 1] = token
       end
     end
-    local lines, totals, moved, total = NS.SortPolicy.Preview(tokens, viewEntries, 12,db.reverseSort)
+    local lines, totals, moved, total = NS.SortPolicy.Preview(tokens, viewEntries,
+      12,db.reverseSort,db.items)
     Message("Sort preview " .. section[1] .. ": " .. total ..
       " stacks, " .. moved .. " positions changing; READ-ONLY")
     for _, line in ipairs(lines) do Message(line) end
@@ -755,6 +753,8 @@ local function ToggleTemporaryJunk(index)
   local record = token and db.items and db.items[token]
   if not entry or not entry.itemID or not record then return end
   record.junk = not record.junk or nil
+  -- CategoryView reads SELL directly from its per-stack token so marked
+  -- items enter the JUNK section immediately. No physical section movement.
   if record.junk then
     Message("Marked for next vendor: " .. entry.name .. " x" .. tostring(entry.count) .. " (Alt-click to unmark)")
   else
@@ -871,11 +871,33 @@ local function VerifyReturnedStack(session)
   return true, "stack restored"
 end
 
--- Disable persistence too after a real cursor/provenance safety failure.
--- A reload must not silently rearm a mode that failed to return an item.
-local function DisableNativePickupForSafety()
+-- A failed physical return pauses THIS runtime interaction, never the user's
+-- saved preference. The old implementation silently wrote nativePickup=false,
+-- breaking subsequent Category dragging across reloads. Re-arm only after an
+-- empty cursor AND an authoritative return to the very same source stack.
+-- If provenance is lost, require explicit inspection and /vb pickup on.
+local function DisableNativePickupForSafety(reason, source)
   pickupTrial.enabled, pickupTrial.oneShot = false, false
-  GetDB().nativePickup = false
+  pickupTrial.safetyPause = {
+    reason = tostring(reason or "unverified native pickup"),
+    source = source, warned = false,
+  }
+end
+
+pickupTrial.TryResumeAfterSafety = function()
+  local pause = pickupTrial.safetyPause
+  if not pause then return pickupTrial.enabled end
+  if GetDB().nativePickup ~= true or not GetDB().organize or InCombat() or
+      pickupTrial.session or pickupTrial.settling or PhysicalBusy() or
+      not CursorEmpty() or not pause.source then return false end
+  -- No implicit trust of cursor-empty alone: prove source token, variant,
+  -- physical slot, count and GUID where available before resuming.
+  local returned = VerifyReturnedStack(pause.source)
+  if returned ~= true then return false end
+  pickupTrial.safetyPause = nil
+  pickupTrial.enabled, pickupTrial.oneShot = true, false
+  pickupTrial.last = "native pickup resumed after verified physical source return"
+  return true
 end
 
 -- Physical cursor + temporary drop receiver, client-tested in 0.0.23.
@@ -919,14 +941,15 @@ local function EnsurePickupTrialOverlay()
     local session = pickupTrial.session
     if not session then return end
     if InCombat() or not window or not window:IsShown() then
-      pickupTrial.enabled, pickupTrial.oneShot = false, false
-      EndPickupTrial("combat/window changed; native mode OFF, real cursor not touched")
+      DisableNativePickupForSafety("combat/window changed during native pickup", session)
+      EndPickupTrial("combat/window changed; native pickup paused, real cursor not touched")
       return
     end
     if IsMouseButtonDown and not IsMouseButtonDown("LeftButton") then
       -- Catch cases in which overlay activation changes native drag capture.
       -- The overlay still prevents physical slot OnReceiveDrag underneath it.
-      if FinishNativePickupTrial then FinishNativePickupTrial("overlay-release-watch") end
+      if not (pickupTrial.QueueBankSourceFinish and pickupTrial.QueueBankSourceFinish("bank-release-watch")) and
+          FinishNativePickupTrial then FinishNativePickupTrial("overlay-release-watch") end
     end
   end)
   layer:Hide()
@@ -1063,11 +1086,11 @@ local function QueuePickupCommit(session, destination, started)
       return
     end
     pickupTrial.rejected = pickupTrial.rejected + 1
-    DisableNativePickupForSafety()
+    DisableNativePickupForSafety("physical return not verified: " .. tostring(reason), session)
     pickupTrial.settling = nil
-    pickupTrial.last = "physical return not verified; native mode OFF: " .. tostring(reason)
+    pickupTrial.last = "native pickup paused: " .. pickupTrial.safetyPause.reason
     TraceInteraction("pickup-verify-rejected", nil, pickupTrial.last)
-    Message("Native pickup disabled after unverified return. See /vbag pickup status.")
+    Message("Native pickup paused after unverified return. See /vb pickup status.")
     Lab:RequestRefresh(false)
   end)
 end
@@ -1154,18 +1177,26 @@ FinishNativePickupTrial = function(route)
   end
   local sourceOK, sourceReason = CheckPickupSource(session)
   local cursorOK, cursorReason = CursorStillMatchesSession(session)
+  -- A native pop-out or Blizzard click can finish its own interaction
+  -- before our receive callback. An already empty cursor is harmless ONLY
+  -- if the exact original physical stack has actually been restored. Never
+  -- ClearCursor or commit a virtual move in this branch.
+  if sourceOK and cursorOK == nil and VerifyReturnedStack(session) == true then
+    EndPickupTrial("native cursor already empty; physical source verified; no virtual move")
+    return
+  end
   if not sourceOK or cursorOK ~= true then
     pickupTrial.rejected = pickupTrial.rejected + 1
-    DisableNativePickupForSafety()
-    EndPickupTrial("native mode OFF; skipped: " .. tostring(sourceReason or cursorReason) ..
+    DisableNativePickupForSafety(sourceReason or cursorReason, session)
+    EndPickupTrial("native pickup paused: " .. tostring(sourceReason or cursorReason) ..
       "; real cursor not touched")
-    Message("Native pickup disabled: drag identity/cursor was not verified.")
+    Message("Native pickup paused for safety; source/cursor not verified. See /vb pickup status.")
     return
   end
   if not ClearCursor then
     pickupTrial.rejected = pickupTrial.rejected + 1
-    DisableNativePickupForSafety()
-    EndPickupTrial("native mode OFF: ClearCursor unavailable; real cursor not touched")
+    DisableNativePickupForSafety("ClearCursor unavailable", session)
+    EndPickupTrial("native pickup paused: ClearCursor unavailable; real cursor not touched")
     return
   end
   -- The overlay still covers the real item buttons here. Suppress any
@@ -1178,10 +1209,10 @@ FinishNativePickupTrial = function(route)
   EndPickupTrial("inside: attempted real cursor return")
   if not ok or not cursorEmpty then
     pickupTrial.rejected = pickupTrial.rejected + 1
-    DisableNativePickupForSafety()
-    pickupTrial.last = "native mode OFF: cursor not cleared: " .. tostring(err or "still held")
+    DisableNativePickupForSafety("cursor not cleared: " .. tostring(err or "still held"), session)
+    pickupTrial.last = "native pickup paused: " .. pickupTrial.safetyPause.reason
     TraceInteraction("pickup-clear-failed", nil, pickupTrial.last)
-    Message("Native pickup disabled: cursor did not clear. Leave held item untouched.")
+    Message("Native pickup paused: cursor did not clear. Leave held item untouched.")
     return
   end
   pickupTrial.settling = session
@@ -1189,8 +1220,49 @@ FinishNativePickupTrial = function(route)
   QueuePickupCommit(session, destination, Now())
 end
 
+-- Keep the v139 BANK destination release-order accommodation narrowly scoped.
+-- An open banker does not mean the player is dropping into it: deferring
+-- ordinary main-inventory drops or external action-bar drops can sample an
+-- obsolete cursor and incorrectly trigger the persistent native-pickup
+-- safety OFF path (Standard then shows its old ghost; Category refuses drag).
+-- Only BANK-BOUND mouse releases use the one-turn destination settlement.
+pickupTrial.QueueBankSourceFinish = function(route)
+  local session=pickupTrial.session
+  if not session or session.finished or not C_Timer or not C_Timer.After or
+      not NS.BankPanel or not NS.BankPanel.IsOpen or not NS.BankPanel.IsOpen() then
+    return false
+  end
+  -- Bank panel geometry is read only. This never invokes GetCrossTarget(),
+  -- which could mutate the bank selection timing and must only be used at
+  -- the final authenticated physical transaction decision.
+  local bankPanel=NS.BankPanel.GetPanel and NS.BankPanel.GetPanel()
+  if not bankPanel or not bankPanel.IsShown or not bankPanel:IsShown() then return false end
+  local ok,x,y=pcall(GetCursorUI)
+  if not ok or type(x)~="number" or type(y)~="number" then return false end
+  local l,r,t,b=bankPanel:GetLeft(),bankPanel:GetRight(),bankPanel:GetTop(),bankPanel:GetBottom()
+  if not l or not r or not t or not b or x<l or x>r or y>t or y<b then
+    return false -- normal main/outer drag keeps the pre-v139 source lifecycle
+  end
+  if session.bankFinishQueued then return true end
+  session.bankFinishQueued=true
+  C_Timer.After(0,function()
+    if pickupTrial.session~=session or session.finished then return end
+    session.bankFinishQueued=nil
+    if IsMouseButtonDown and IsMouseButtonDown("LeftButton") then return end
+    FinishNativePickupTrial(route)
+  end)
+  return true
+end
+
 StartNativePickupTrial = function(button)
   if PhysicalBusy() then return end
+  if pickupTrial.safetyPause and not pickupTrial.TryResumeAfterSafety() then
+    if not pickupTrial.safetyPause.warned then
+      pickupTrial.safetyPause.warned = true
+      Message("Native pickup is temporarily paused; confirm held items are safe. /vb pickup status")
+    end
+    return
+  end
   -- Category View always uses the proven real-cursor receiver when native
   -- pickup is permitted, even if Standard's Organize toggle is OFF. Never
   -- fall back to Blizzard's item-on-item physical swap inside this panel.
@@ -1222,10 +1294,12 @@ StartNativePickupTrial = function(button)
   local success, reason = PickupRealItem(item)
   if not success then
     pickupTrial.rejected = pickupTrial.rejected + 1
-    DisableNativePickupForSafety()
-    pickupTrial.last = "physical pickup failed; native mode OFF: " .. tostring(reason)
+    DisableNativePickupForSafety("physical pickup failed: " .. tostring(reason),
+      {sourceIndex=index,token=token,bagID=item.bagID,slotID=item.slotID,
+       itemID=item.itemID,link=item.link,count=item.count,guid=item.guid})
+    pickupTrial.last = "native pickup paused: " .. pickupTrial.safetyPause.reason
     TraceInteraction("pickup-start-rejected", button, pickupTrial.last)
-    Message("Native pickup disabled: " .. pickupTrial.last)
+    Message(pickupTrial.last)
     return
   end
   local session = {sourceIndex = index, token = token,
@@ -1239,8 +1313,8 @@ StartNativePickupTrial = function(button)
   end
   local overlay = EnsurePickupTrialOverlay()
   if not overlay then
-    DisableNativePickupForSafety()
-    EndPickupTrial("native mode OFF: drop receiver unavailable; real item cursor retained")
+    DisableNativePickupForSafety("drop receiver unavailable", session)
+    EndPickupTrial("native pickup paused: drop receiver unavailable; real item cursor retained")
     return
   end
   overlay:Show()
@@ -1960,13 +2034,14 @@ local function GetSlotButton(bagID, slotID)
       -- Disabled native pickup means refusal, not an unsafe physical fallback.
       if not (IsAltKeyDown and IsAltKeyDown()) then
         if GetDB().nativePickup then StartNativePickupTrial(self)
-        else Message("Category View dragging requires native pickup to be enabled.") end
+        else Message("Category View dragging needs native pickup. Check /vb pickup status and /vb pickup on.") end
       end
       return
     end
     if GetDB().organize then
       if not (IsAltKeyDown and IsAltKeyDown()) then
-        if pickupTrial.enabled then StartNativePickupTrial(self)
+        if GetDB().nativePickup then StartNativePickupTrial(self)
+        elseif pickupTrial.enabled then StartNativePickupTrial(self)
         else StartVirtualDrag(self) end
       end
       return
@@ -1977,7 +2052,9 @@ local function GetSlotButton(bagID, slotID)
     TraceInteraction("drag-stop", self,
       externalPickupActive and "external" or (dragging and "virtual" or "no-active-drag"))
     if pickupTrial.session then
-      FinishNativePickupTrial("source-drag-stop")
+      if not (pickupTrial.QueueBankSourceFinish and pickupTrial.QueueBankSourceFinish("bank-deferred-source-stop")) then
+        FinishNativePickupTrial("source-drag-stop")
+      end
       return
     end
     if externalPickupActive then
@@ -2760,10 +2837,21 @@ end
 -- transaction is considered. Bank sort remains virtual-only.
 function Lab:SortAndOptimize()
   if NS.CategoryView and NS.CategoryView.IsActive(GetDB()) then
-    -- Category View has no manual layout to sort. Preserve Standard's saved
-    -- positions; the existing independently verified physical optimizer is
-    -- still available through the Sort button, with no visual resort hook.
-    self:StartAutomaticPhysicalSort(false)
+    -- Match Standard's immediate visual Sort BEFORE physical optimization.
+    -- Stable token ranks avoid category icons chasing real bag/slot moves.
+    -- The Standard saved layout is not modified by a Category Sort.
+    if not InCombat() and not PhysicalBusy() and not dragging and
+        not externalSession and not pickupTrial.session and
+        not pickupTrial.settling and not virtualDropGuard and CursorEmpty() and
+        not vendorBusy and not vendorPending and
+        not (NS.CrossTransfer and NS.CrossTransfer.IsBusy and NS.CrossTransfer.IsBusy()) and
+        not (NS.StackWork and NS.StackWork.IsBusy and NS.StackWork.IsBusy()) and
+        NS.CategoryView.SortVisualOrder(viewLayout,viewEntries,GetDB().reverseSort) then
+      self:RequestRefresh(true)
+      self:StartAutomaticPhysicalSort(false)
+    else
+      Message("Finish the active inventory transaction or cursor action before sorting.")
+    end
     return
   end
   if SortVisualOrder() then self:StartAutomaticPhysicalSort(true) end
@@ -3667,7 +3755,18 @@ function Lab:Refresh()
     -- Prepare the fully expanded second canvas *after* the ordinary view
     -- succeeds. Existing native identities and category positions are read;
     -- the user's saved oneStack/collapse states are NEVER changed.
-    if NS.CombatExpanded then
+    -- Every auto-sort transaction already reconciles normal tokens. Rebuilding
+    -- the SECOND fully-expanded combat canvas after EACH verified physical
+    -- move repeats expensive category/geometry work and causes visible stalls.
+    -- During an active batch its existing prebuilt real-slot pool remains
+    -- valid; a final normal refresh prepares the settled geometry. Never
+    -- skip initial preparation if it is not ready yet.
+    local batchState=NS.PhysicalBatch and NS.PhysicalBatch.Status and
+      NS.PhysicalBatch.Status() or nil
+    local deferCombatPrepare=batchState and batchState.busy and
+      batchState.mode=="automatic" and NS.CombatExpanded and
+      NS.CombatExpanded.Ready and NS.CombatExpanded.Ready()
+    if NS.CombatExpanded and not deferCombatPrepare then
       local prepOK,prepError=pcall(NS.CombatExpanded.Prepare,entries,viewLayout,
         viewEntries,blanks,mainCapacity,ammoCapacity,reagentCapacity,
         ammoBagIDs,ammoLabel,buttonsBySlot)
@@ -3780,12 +3879,15 @@ SlashCmdList.OBSIDIANBAGS = function(text)
         "; active=" .. tostring(pickupTrial.session ~= nil) ..
         "; settling=" .. tostring(pickupTrial.settling ~= nil) ..
         "; saved=" .. tostring(GetDB().nativePickup) ..
+        "; safetyPause=" .. tostring(pickupTrial.safetyPause and
+          pickupTrial.safetyPause.reason or "none") ..
         "; attempts=" .. pickupTrial.attempts .. " returned=" .. pickupTrial.returned ..
         " committed=" .. pickupTrial.committed .. " rejected=" .. pickupTrial.rejected ..
         " outside=" .. pickupTrial.external .. "; last=" .. pickupTrial.last)
     elseif text == "pickup off" then
       GetDB().nativePickup = false
       pickupTrial.enabled, pickupTrial.oneShot = false, false
+      pickupTrial.safetyPause = nil
       if pickupTrial.session then
         Message("Native pickup OFF (saved); current real-item drop receiver remains until release.")
       else
@@ -3795,8 +3897,11 @@ SlashCmdList.OBSIDIANBAGS = function(text)
       Message("Turn Organize ON and leave combat before enabling native pickup.")
     elseif pickupTrial.session or pickupTrial.settling then
       Message("Finish the current native drop and wait for physical return confirmation first.")
+    elseif not CursorEmpty() then
+      Message("Native pickup not rearmed: finish or safely return the held item first.")
     else
       pickupTrial.enabled = true
+      pickupTrial.safetyPause = nil
       pickupTrial.oneShot = (text == "pickup once")
       if not pickupTrial.oneShot then GetDB().nativePickup = true end
       Message(pickupTrial.oneShot and
@@ -3858,6 +3963,8 @@ SlashCmdList.OBSIDIANBAGS = function(text)
       "; active=" .. tostring(pickupTrial.session ~= nil) ..
       "; settling=" .. tostring(pickupTrial.settling ~= nil) ..
       "; saved=" .. tostring(GetDB().nativePickup) ..
+      "; safetyPause=" .. tostring(pickupTrial.safetyPause and
+        pickupTrial.safetyPause.reason or "none") ..
       "; attempts=" .. pickupTrial.attempts .. " returned=" .. pickupTrial.returned ..
       " committed=" .. pickupTrial.committed .. " rejected=" .. pickupTrial.rejected ..
       " external=" .. pickupTrial.external .. "; last=" .. pickupTrial.last)
@@ -4184,6 +4291,7 @@ local function ReleaseBankDrop(reason)
   end
   bankDropCallback=nil
   bankDropSplitMode,bankDropSplitPressed=false,false
+  bankDropStats.clickMode,bankDropStats.clickPressed=false,false
   bankDropStats.resolved=bankDropStats.resolved+1
   bankDropStats.last=reason
   RetireBankDropOverlay()
@@ -4201,20 +4309,30 @@ local function EnsureBankDropOverlay()
   layer:SetFrameLevel(window:GetFrameLevel()+155)
   layer:EnableMouse(true)
   layer:RegisterForClicks("LeftButtonUp")
+  layer:SetScript("OnMouseDown",function(_,button)
+    if button=="LeftButton" and bankDropStats.clickMode then bankDropStats.clickPressed=true end
+  end)
   layer:SetScript("OnReceiveDrag",function()
     bankDropStats.receive=bankDropStats.receive+1
+    -- A receive-drag is itself a new physical action. The initial bank
+    -- click never takes place over this receiver (it covers MAIN only).
+    if bankDropStats.clickMode then bankDropStats.clickPressed=true end
     ReleaseBankDrop("bank-overlay-receive")
   end)
   layer:SetScript("OnMouseUp",function(_,button)
     if button=="LeftButton" then
       bankDropStats.mouseup=bankDropStats.mouseup+1
-      ReleaseBankDrop("bank-overlay-mouse-up")
+      if not bankDropStats.clickMode or bankDropStats.clickPressed then
+        ReleaseBankDrop("bank-overlay-mouse-up")
+      end
     end
   end)
   layer:SetScript("OnClick",function(_,button)
     if button=="LeftButton" then
       bankDropStats.click=bankDropStats.click+1
-      ReleaseBankDrop("bank-overlay-click")
+      if not bankDropStats.clickMode or bankDropStats.clickPressed then
+        ReleaseBankDrop("bank-overlay-click")
+      end
     end
   end)
   layer:SetScript("OnUpdate",function()
@@ -4225,6 +4343,7 @@ local function EnsureBankDropOverlay()
         NS.StackWork.IsSplitInProgress and NS.StackWork.IsSplitInProgress()
       if (InCombat() and not popupSplit) or not window or not window:IsShown() then
         bankDropCallback=nil
+        bankDropStats.clickMode,bankDropStats.clickPressed=false,false
         bankDropStats.cancelled=bankDropStats.cancelled+1
         bankDropStats.last="cancelled on combat / window hide"
         RetireBankDropOverlay()
@@ -4233,7 +4352,8 @@ local function EnsureBankDropOverlay()
         if bankDropSplitMode and pressed then bankDropSplitPressed=true end
         -- A split cursor is held AFTER a quantity-dialog click. Do not
         -- interpret the dialog's mouse-up as a virtual destination drop.
-        if not pressed and (not bankDropSplitMode or bankDropSplitPressed) then
+        if not pressed and (not bankDropSplitMode or bankDropSplitPressed) and
+            (not bankDropStats.clickMode or bankDropStats.clickPressed) then
           bankDropStats.watch=bankDropStats.watch+1
           ReleaseBankDrop("bank-overlay-release-watch")
         end
@@ -4244,7 +4364,7 @@ local function EnsureBankDropOverlay()
   bankDropOverlay=layer
   return layer
 end
-local function ArmBankDrop(callback)
+local function ArmBankDrop(callback,awaitNewPress)
   local popupSplit=((NS.StackPopover and NS.StackPopover.IsOpen and
     NS.StackPopover.IsOpen()) or (NS.CombatStackPopover and
     NS.CombatStackPopover.IsOpen and NS.CombatStackPopover.IsOpen())) and NS.StackWork and
@@ -4262,6 +4382,9 @@ local function ArmBankDrop(callback)
   bankDropSerial=bankDropSerial+1
   bankDropCallback=callback
   bankDropSplitMode,bankDropSplitPressed=false,false
+  -- Click-pickup starts on the first bank mouse-UP. Its native cursor must
+  -- persist until a NEW destination press; drag-pickup has no such delay.
+  bankDropStats.clickMode,bankDropStats.clickPressed=awaitNewPress==true,false
   bankDropStats.armed=bankDropStats.armed+1
   bankDropStats.last="armed for bank visual drag"
   layer:Show()
@@ -4274,6 +4397,7 @@ local function EndBankDrop()
   end
   bankDropCallback=nil
   bankDropSplitMode,bankDropSplitPressed=false,false
+  bankDropStats.clickMode,bankDropStats.clickPressed=false,false
   if bankDropOverlay and bankDropOverlay:IsShown() then RetireBankDropOverlay() end
 end
 
@@ -4288,7 +4412,25 @@ end
 -- event. The foreign item is NOT deposited on the bound physical slot.
 NS.MainPanel = {
   BeginBankDrag = ArmBankDrop,
+  BeginBankClick = function(callback) return ArmBankDrop(callback,true) end,
   EndBankDrag = EndBankDrop,
+  -- Destination-driven backup for bank drops. Forever can dispatch the
+  -- destination's OnReceiveDrag/OnMouseUp without a timely source stop.
+  -- Run the SAME proven native cursor return and physical validation path.
+  FinishCarriedBankDrop = function(trigger)
+    if InCombat() or not NS.BankPanel or not NS.BankPanel.IsOpen or
+        not NS.BankPanel.IsOpen() then return false end
+    if pickupTrial.session then
+      FinishNativePickupTrial(trigger or "bank-target-release")
+      return true
+    end
+    local candidate=pickupTrial.clickCandidate
+    if candidate and candidate.armed and NS.MainPanel and
+        NS.MainPanel.FinishCategoryClickPickup then
+      return NS.MainPanel.FinishCategoryClickPickup()
+    end
+    return false
+  end,
   IsBankDropShielded = function()
     return bankDropOverlay~=nil and bankDropOverlay:IsShown()
   end,
@@ -4320,12 +4462,75 @@ NS.MainPanel = {
       (allowBatch or not PhysicalBusy()) and not pickupTrial.session and not pickupTrial.settling and not externalSession and
       not vendorBusy and not vendorPending
   end,
+  -- A native physical stack dragged FROM our carried One Stack inspector
+  -- onto BLANK main content has no destination button. This read-only check
+  -- authorizes a verified *return to original source* (not a physical move).
+  -- It never takes responsibility for a cursor over any active slot, summary,
+  -- pop-out, bank window, or category/collapse control.
+  IsBlankStackPopoverDrop = function()
+    if InCombat() or not window or not window:IsShown() or not scroll or
+        not scroll:IsShown() or pickupTrial.session or pickupTrial.settling or
+        dragging or externalSession or PhysicalBusy() or
+        (NS.StackWork and NS.StackWork.IsSplitInProgress and
+          NS.StackWork.IsSplitInProgress()) then return false end
+    local x,y=GetCursorUI()
+    if type(x)~="number" or type(y)~="number" then return false end
+    local l,r,t,b=scroll:GetLeft(),scroll:GetRight(),scroll:GetTop(),scroll:GetBottom()
+    if not l or not r or not t or not b or x<l or x>r or y<b or y>t then return false end
+    if FindDropIndex() then return false end
+    if NS.StackPopover and NS.StackPopover.IsOver and
+        NS.StackPopover.IsOver(x,y) then return false end
+    if NS.BankPanel and NS.BankPanel.GetPanel then
+      local bank=NS.BankPanel.GetPanel()
+      if bank and bank.IsShown and bank:IsShown() then
+        local bl,br,bt,bb=bank:GetLeft(),bank:GetRight(),bank:GetTop(),bank:GetBottom()
+        if bl and br and bt and bb and x>=bl and x<=br and y<=bt and y>=bb then
+          return false
+        end
+      end
+    end
+    if NS.CategoryView and NS.CategoryView.IsActive(GetDB()) then
+      if NS.CategoryView.HitInteractiveCategory and
+          NS.CategoryView.HitInteractiveCategory(x,y) then return false end
+    elseif NS.CollapseView and NS.CollapseView.HitInteractive and
+        NS.CollapseView.HitInteractive(x,y) then return false end
+    return true
+  end,
   GetCrossTarget = function()
     if not window or not window:IsShown() or InCombat() or
         not GetDB().organize or pickupTrial.session or pickupTrial.settling or
         dragging or PhysicalBusy() or vendorBusy or vendorPending then return nil end
+    local x,y=GetCursorUI()
+    -- Pop-out padding/headers and visual category/collapse controls are
+    -- NEVER bank-to-bag drop cells, even when a native slot is behind them.
+    if NS.StackPopover and NS.StackPopover.IsOver and
+        NS.StackPopover.IsOver(x,y) then return nil end
+    if NS.CategoryView and NS.CategoryView.IsActive(GetDB()) then
+      if NS.CategoryView.HitInteractiveCategory and
+          NS.CategoryView.HitInteractiveCategory(x,y) then return nil end
+    elseif NS.CollapseView and NS.CollapseView.HitInteractive and
+        NS.CollapseView.HitInteractive(x,y) then return nil end
     local index=FindDropIndex()
-    if not index or index<1 or index>#viewLayout then return nil end
+    if not index then
+      -- A bank-origin drag released in EMPTY carried-inventory background
+      -- has no native slot underneath the cursor. Treat only the actual
+      -- inventory scroll area as a request for the FIRST genuine MAIN empty
+      -- visual cell. Never reinterpret headers, One Stack inspectors, summary
+      -- tiles, or the outer window controls as an implicit drop destination.
+      if not scroll or not scroll:IsShown() then return nil end
+      local l,r,t,b=scroll:GetLeft(),scroll:GetRight(),scroll:GetTop(),scroll:GetBottom()
+      if type(l)~="number" or type(r)~="number" or
+          type(t)~="number" or type(b)~="number" or
+          x<l or x>r or y<b or y>t then return nil end
+      -- Reuse the established guarded cross-window blank selector. It
+      -- returns nil unless a real saved-layout MAIN empty slot exists; the
+      -- physical coordinator independently revalidates ordinary bag space.
+      local first=NS.MainPanel and NS.MainPanel.GetFirstEmptyCrossTarget and
+        NS.MainPanel.GetFirstEmptyCrossTarget() or nil
+      if first then first.backgroundDrop=true end
+      return first
+    end
+    if index<1 or index>#viewLayout then return nil end
     local token=viewLayout[index]
     local entry=token~=false and viewEntries[token] or nil
     local marked=token and token~=false and GetDB().items and

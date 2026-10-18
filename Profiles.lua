@@ -6,6 +6,8 @@ local P = ns.Profiles
 local fields = {"uiSkin","appearance","mainColumns","categoryColumns","categorySlotColumns","lockWindow","iconSize","gridSpacing",
   "bankIconSize","bankGridSpacing","bankCountFontSize","bankCountFontColor",
   "linkIconSize","linkGridSpacing","linkFont",
+  "linkBankView","linkBankStandardColumns","linkBankCategorySlotColumns",
+  "linkBankCategoryColumns","linkBankOneStack",
   "showControls","sortOnOpen","reverseSort","bankView","bankStandardColumns","bankCategoryColumns","bankCategorySlotColumns","bankCategoryCollapsed","bankOneStack","inventoryView","oneStack","categoryCollapsed","separateUtilityBag","separateReagentBag","countFontSize","countFontColor","showCorners",
   "showBlizzardBags","showBlizzardBank",
   "x","y","bankX","bankY","collapseMain","collapseAmmo","collapseReagent","collapseKeyring","collapseBank",

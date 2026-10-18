@@ -12,9 +12,11 @@ local selectedOwner
 local lastShift, lastAlt = false, false
 local wasMouseDown = false
 local dismissAfterCursor = false
+local preserveSplit,splitSeen = false,false
 -- Only an observed click/drag on an existing native physical popup source may
 -- authorize ClearCursor, and only after verifying its held item provenance.
 local nativeSource, pendingSource, mergeSettling = nil,nil,nil
+local blankReturnDrag -- verified popup-only drag, never a global native-cursor override
 local function Now() return GetTimePreciseSec and GetTimePreciseSec() or GetTime() end
 local CELL, COLUMNS, MAX_ROWS = 41, 5, 4
 local WIDTH = COLUMNS*CELL+20
@@ -159,11 +161,22 @@ local function Close()
   end
   isOpen,selectedID,selectedOwner,pendingRefresh,pendingClose=false,nil,nil,false,false
   dismissAfterCursor=false
+  preserveSplit,splitSeen=false,false
   nativeSource,pendingSource=nil,nil
+  blankReturnDrag=nil
   if frame then frame:Hide() end
 end
 function P.Close() Close() end
 function P.IsOpen() return isOpen and frame and frame:IsShown() or false end
+-- Reject implicit background deposits into the pop-out's empty padding or
+-- header. Only its real physical buttons are explicit stack targets.
+function P.IsOver(x,y)
+  if not P.IsOpen() or type(x)~="number" or type(y)~="number" then return false end
+  local l,r,t,b=frame:GetLeft(),frame:GetRight(),frame:GetTop(),frame:GetBottom()
+  return type(l)=="number" and type(r)=="number" and
+    type(t)=="number" and type(b)=="number" and
+    x>=l and x<=r and y>=b and y<=t
+end
 
 -- These are distinct native BUTTONS bound to real physical slots. Their parent
 -- carries a real bagID; no secure identity or click handler is ever rebound.
@@ -200,6 +213,7 @@ local function PhysicalButton(bag,slot)
         not (IsAltKeyDown and IsAltKeyDown()) then ArmNativeSource(self) end
   end)
   button:HookScript("OnDragStart",function(self)
+    blankReturnDrag=nil
     if not Combat() and not nativeSource and not pendingSource then
       -- OnMouseDown typically captures the native source; if this client
       -- skips it, a verified cursor observation can still recover it.
@@ -214,6 +228,14 @@ local function PhysicalButton(bag,slot)
       end
     end
     ObserveNativeSource()
+    -- Capture the ORIGINAL physical popup stack, not the visual summary.
+    -- Forever may expose its real item cursor after the native drag hook,
+    -- so the release handler revalidates both cursor and live source.
+    local source=nativeSource or pendingSource
+    if source and self.labEntry and source.token==self.labToken and
+        SamePhysical(source.entry,self.labEntry) then
+      blankReturnDrag={source=source,started=Now(),held=false}
+    end
   end)
   local shade=button:CreateTexture(nil,"OVERLAY",nil,1)
   shade:SetAllPoints(button)
@@ -247,6 +269,12 @@ local function PhysicalButton(bag,slot)
     elseif IsShiftKeyDown and IsShiftKeyDown() and button.labEntry.count>1 then
       local ok,why=ns.StackWork and ns.StackWork.OpenSplit and
         ns.StackWork.OpenSplit(button.labEntry,button.labOriginalIndex,self,"popover")
+      if ok then
+        -- Keep the physical inspector visible through its own split dialog,
+        -- held split cursor, and subsequent verified deposit.
+        preserveSplit,splitSeen=true,false
+        dismissAfterCursor=false
+      end
       if not ok then
         print("|cff8ad9ffObsidian Bags:|r Pop-out split: "..tostring(why or "unavailable"))
       end
@@ -309,6 +337,41 @@ local function UpdateModifiers()
   end
 end
 
+local function ResolveBlankPopupReturn(session)
+  if not session or Combat() or not P.IsOpen() or not ClearCursor or
+      Now()-session.started>8 or not session.held or
+      not ns.MainPanel or not ns.MainPanel.IsBlankStackPopoverDrop or
+      not ns.MainPanel.IsBlankStackPopoverDrop() then return end
+  local source=session.source
+  local entry=source and source.entry
+  if not entry or not HeldMatches(entry) then return end
+  local current,token=CurrentPhysical(entry.bagID,entry.slotID)
+  if token~=source.token or not SamePhysical(current,entry) then
+    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: original physical stack changed")
+    return
+  end
+  -- An authentic full-stack native pickup may report an EMPTY physical
+  -- slot while the item is held. Reject an unreadable slot or a DIFFERENT
+  -- live item, but allow nil only when the saved token/source AND real held
+  -- cursor have already independently matched the captured popup source.
+  if not C_Container or not C_Container.GetContainerItemInfo then return end
+  local ok,live=pcall(C_Container.GetContainerItemInfo,entry.bagID,entry.slotID)
+  if not ok or (live and (live.itemID~=entry.itemID or
+      live.stackCount~=entry.count or
+      (entry.link and live.hyperlink and live.hyperlink~=entry.link))) then
+    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return refused: live physical slot differs")
+    return
+  end
+  local clearOK=pcall(ClearCursor)
+  if not clearOK or not EmptyCursor() then
+    print("|cff8ad9ffObsidian Bags:|r Pop-out blank return stopped: cursor not confirmed empty")
+    return
+  end
+  if nativeSource==source then nativeSource=nil end
+  if pendingSource==source then pendingSource=nil end
+  -- No saved visual changes, no synthetic drag cursor and no physical move.
+end
+
 local function MakeFrame()
   if frame or Combat() then return frame end
   frame=CreateFrame("Frame","ObsidianBagsOneStackPopover",UIParent,"BackdropTemplate")
@@ -327,6 +390,7 @@ local function MakeFrame()
     isOpen,selectedID,selectedOwner,pendingRefresh,pendingClose=false,nil,nil,false,false
     dismissAfterCursor=false
     nativeSource,pendingSource=nil,nil
+    blankReturnDrag=nil
     if Combat() then
       pendingChildHide=true
       -- When the normal inspector is securely closed after the expanded
@@ -385,6 +449,12 @@ local function MakeFrame()
     if not P.IsOpen() then return end
     if not Combat() and pendingClose then Close();return end
     UpdateModifiers()
+    local splitActive=ns.StackWork and ns.StackWork.IsSplitInProgress and
+      ns.StackWork.IsSplitInProgress() or false
+    if preserveSplit and splitActive then splitSeen=true end
+    -- Once the native split transaction finishes, clear this one-shot
+    -- outside-click exemption. The popup remains open; future ordinary
+    -- outside clicks still dismiss it as before.
     -- Detect an outside press without modifying/hooking any native OnClick.
     -- The popup is dismissed when the user interacts with another bag item,
     -- inventory background, trade window, or any other UI surface.
@@ -417,7 +487,7 @@ local function MakeFrame()
         local ok,widget=pcall(GetMouseFocus)
         if ok and widget then known=true;inside=IsPopupOrSummary(widget) end
       end
-      if known and not inside then
+      if known and not inside and not preserveSplit then
         -- A main-bag click may turn into a native cursor drag onto one of
         -- our popup cells. Do not destroy the popup on mouse-DOWN before
         -- Blizzard has even had a chance to pick up that source item.
@@ -427,10 +497,33 @@ local function MakeFrame()
         else Close() end
       end
     end
+    -- Native physical popup drag can release over blank main-inventory
+    -- content. This area has no item-button OnReceiveDrag, so only an exact
+    -- source-verified RETURN is permitted. Defer one UI turn so any native
+    -- target callbacks can complete before the cursor is examined.
+    if blankReturnDrag then
+      if down and IsMouseButtonDown and IsMouseButtonDown("LeftButton") then
+        blankReturnDrag.held=true
+      elseif not down then
+        local attempt=blankReturnDrag
+        blankReturnDrag=nil
+        if attempt.held and C_Timer and C_Timer.After then
+          C_Timer.After(0,function() ResolveBlankPopupReturn(attempt) end)
+        end
+      end
+    end
     wasMouseDown=down
-    if dismissAfterCursor and EmptyCursor() and not down then
+    if dismissAfterCursor and EmptyCursor() and not down and not preserveSplit then
       dismissAfterCursor=false
       Close()
+    end
+    if preserveSplit and not down and EmptyCursor() and not splitActive then
+      local dialogOpen=StackSplitFrame and StackSplitFrame.IsShown and
+        StackSplitFrame:IsShown() or false
+      if splitSeen or not dialogOpen then
+        preserveSplit,splitSeen=false,false
+        dismissAfterCursor=false
+      end
     end
   end)
   frame:Hide()
@@ -536,6 +629,8 @@ function P.Toggle(owner,description)
   wasMouseDown=IsMouseButtonDown and
     (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) or false
   dismissAfterCursor=false
+  preserveSplit,splitSeen=false,false
+  blankReturnDrag=nil
   isOpen=true
   frame:ClearAllPoints()
   frame:SetPoint("TOPLEFT",owner,"TOPRIGHT",10,0)

@@ -85,6 +85,7 @@ local function Unsafe()
   if InCombatLockdown and InCombatLockdown() then return "combat" end
   if UnitIsDead and UnitIsDead("player") then return "player dead" end
   if MerchantFrame and MerchantFrame.IsShown and MerchantFrame:IsShown() then return "merchant open" end
+  if ns.BankSort and ns.BankSort.IsBusy and ns.BankSort.IsBusy() then return "bank physical Sort busy" end
   if ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy() then return "physical batch busy" end
   if ns.PhysicalMove and ns.PhysicalMove.IsBusy and ns.PhysicalMove.IsBusy() then return "specialty physical transfer busy" end
   if ns.StackWork and ns.StackWork.IsBusy and ns.StackWork.IsBusy() then return "stack work busy" end

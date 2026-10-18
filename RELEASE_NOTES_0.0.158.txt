@@ -1,0 +1,19 @@
+Obsidian Bags v0.0.158 | Combat split source evidence
+
+v157 client test: ordinary click and drag cancellation work and split
+placement works with some item classes, but Strider Meat, Sunscale Feather,
+Tigerseye were refused with no verified partial remainder. Combat category
+positions also appear static after substantial physical stack rearrangement.
+
+A source can report locked during a native split. Preserve the accepted v153
+source remainder validation, then optionally accept an explicitly captured
+Shift source after separately verifying it is the same physical item and that
+its live stack count decreased. Mismatches refuse without physical actions.
+The /obcombatdrop status now reports ID matches, locks, links, counts and
+source proof when a split is refused.
+
+Physical native buttons and the secure combat layout are intentionally static
+through combat lockdown. No reparent/reanchor/creation of secure item buttons,
+physical sorter, bank, or virtual reconciliation was changed.
+
+Local tests passed; awaits Forever client tests.

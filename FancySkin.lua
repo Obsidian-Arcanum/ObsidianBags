@@ -88,6 +88,9 @@ function F.ApplyBackground()
     -- for a later switch back to Fancy without a stale-color flash.
     tintTexture:SetColorTexture(0,0,0,0)
   end
+  if NS.BankSkin and NS.BankSkin.ApplyBackground then
+    NS.BankSkin.ApplyBackground()
+  end
 end
 local function SetAppearanceColor(mode,r,g,b,custom)
   local value=Appearance(mode)
@@ -751,6 +754,7 @@ local function SetColumns(value)
   local max=math.max(9,(controls.getColumnMaximum and controls.getColumnMaximum()) or 12)
   value=math.max(9,math.min(max,math.floor((tonumber(value) or 10)+.5)))
   if controls.setColumns then controls.setColumns(value) end
+  if NS.BankPanel and NS.BankPanel.RefreshPresentation then NS.BankPanel.RefreshPresentation() end
   SyncColumnOptions()
 end
 local function SetCategorySlots(value)
@@ -761,6 +765,7 @@ local function SetCategorySlots(value)
     local ok,reason=controls.setCategorySlotColumns(value)
     if not ok then Print(reason or "Unable to change Category View slot columns") end
   end
+  if NS.BankPanel and NS.BankPanel.RefreshPresentation then NS.BankPanel.RefreshPresentation() end
   SyncColumnOptions()
 end
 -- Both independent slot-width controls and the category lane count live in
@@ -845,6 +850,7 @@ local function BuildLayoutOptions(contents,advancedOptions)
         local ok,reason=controls.setCategoryColumns(chosen)
         if not ok then Print(reason or "Unable to change category section columns") end
       end
+      if NS.BankPanel and NS.BankPanel.RefreshPresentation then NS.BankPanel.RefreshPresentation() end
       if updateSettingsOptions then updateSettingsOptions() end
     end)
     b:SetWidth(96)
@@ -868,7 +874,9 @@ end
 -- Bank preferences use the same visual control vocabulary as carried-bag
 -- Standard / Category View settings. They are independently persisted.
 local function BuildBankLayoutOptions(contents,advancedOptions)
-  Header(contents,"BANK VIEW SETTINGS",-1275)
+  local prefs=NS.BankViewPreferences
+  local function Y(old) return old+1120 end
+  Header(contents,"BANK VIEW SETTINGS",Y(-1275))
   local bank=NS.BankPanel
   local function Apply(setter,value)
     if not bank or not bank[setter] then return end
@@ -878,77 +886,77 @@ local function BuildBankLayoutOptions(contents,advancedOptions)
   end
 
   local stdLabel=MakeLabel(contents,"STANDARD VIEW","GameFontHighlightSmall",GOLD)
-  stdLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1300)
+  stdLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1300))
   local stdValue=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-  stdValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1322)
-  local stdLess=MenuAction(contents,-1345,"−  Fewer columns",function()
+  stdValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1322))
+  local stdLess=MenuAction(contents,Y(-1345),"−  Fewer columns",function()
     Apply("SetStandardColumns",(bank.GetStandardColumns and bank.GetStandardColumns() or 10)-1)
   end)
   stdLess:SetWidth(145)
-  local stdMore=MenuAction(contents,-1345,"+  More columns",function()
+  local stdMore=MenuAction(contents,Y(-1345),"+  More columns",function()
     Apply("SetStandardColumns",(bank.GetStandardColumns and bank.GetStandardColumns() or 10)+1)
   end)
   stdMore:SetWidth(145)
-  stdMore:ClearAllPoints();stdMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-1345)
+  stdMore:ClearAllPoints();stdMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,Y(-1345))
   local stdEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
-  stdEntry:SetSize(49,24);stdEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-1345)
+  stdEntry:SetSize(49,24);stdEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,Y(-1345))
   stdEntry:SetAutoFocus(false);stdEntry:SetNumeric(true);stdEntry:SetMaxLetters(5)
   stdEntry:SetScript("OnEnterPressed",function(self)
     Apply("SetStandardColumns",tonumber(self:GetText()));self:ClearFocus()
   end)
-  local resetStd=MenuAction(contents,-1374,"Reset Standard to 10",function()
+  local resetStd=MenuAction(contents,Y(-1374),"Reset Standard to 10",function()
     stdEntry:ClearFocus();Apply("SetStandardColumns",10)
   end)
   resetStd:SetWidth(205)
 
   local catLabel=MakeLabel(contents,"CATEGORY VIEW","GameFontHighlightSmall",GOLD)
-  catLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1407)
+  catLabel:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1407))
   local catValue=MakeLabel(contents,"","GameFontHighlightSmall",CYAN)
-  catValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1429)
-  local catLess=MenuAction(contents,-1452,"−  Fewer columns",function()
+  catValue:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1429))
+  local catLess=MenuAction(contents,Y(-1452),"−  Fewer columns",function()
     Apply("SetCategorySlotColumns",(bank.GetCategorySlotColumns and bank.GetCategorySlotColumns() or 6)-1)
   end)
   catLess:SetWidth(145)
-  local catMore=MenuAction(contents,-1452,"+  More columns",function()
+  local catMore=MenuAction(contents,Y(-1452),"+  More columns",function()
     Apply("SetCategorySlotColumns",(bank.GetCategorySlotColumns and bank.GetCategorySlotColumns() or 6)+1)
   end)
   catMore:SetWidth(145)
-  catMore:ClearAllPoints();catMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,-1452)
+  catMore:ClearAllPoints();catMore:SetPoint("TOPLEFT",contents,"TOPLEFT",171,Y(-1452))
   local catEntry=CreateFrame("EditBox",nil,contents,"InputBoxTemplate")
-  catEntry:SetSize(49,24);catEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,-1452)
+  catEntry:SetSize(49,24);catEntry:SetPoint("TOPLEFT",contents,"TOPLEFT",334,Y(-1452))
   catEntry:SetAutoFocus(false);catEntry:SetNumeric(true);catEntry:SetMaxLetters(5)
   catEntry:SetScript("OnEnterPressed",function(self)
     Apply("SetCategorySlotColumns",tonumber(self:GetText()));self:ClearFocus()
   end)
-  local resetCat=MenuAction(contents,-1481,"Reset Category to 6",function()
+  local resetCat=MenuAction(contents,Y(-1481),"Reset Category to 6",function()
     catEntry:ClearFocus();Apply("SetCategorySlotColumns",6)
   end)
   resetCat:SetWidth(205)
 
   local lanesTitle=MakeLabel(contents,"CATEGORY VIEW  /  SECTION COLUMNS",
     "GameFontHighlightSmall",GOLD)
-  lanesTitle:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1520)
+  lanesTitle:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1520))
   local lanes={}
   for n=1,4 do
     local chosen=n
-    local b=MenuAction(contents,-1548,tostring(n).." column"..(n==1 and "" or "s"),function()
+    local b=MenuAction(contents,Y(-1548),tostring(n).." column"..(n==1 and "" or "s"),function()
       Apply("SetCategoryColumns",chosen)
     end)
     b:SetWidth(96)
-    b:ClearAllPoints();b:SetPoint("TOPLEFT",contents,"TOPLEFT",16+(n-1)*109,-1548)
+    b:ClearAllPoints();b:SetPoint("TOPLEFT",contents,"TOPLEFT",16+(n-1)*109,Y(-1548))
     lanes[#lanes+1]=b
   end
   local laneNote=MakeLabel(contents,
     "Sections fill left to right, then down; each bank lane has its own item grid.",
     "GameFontHighlightSmall",{.65,.72,.78})
-  laneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1580)
-  local bankOneStack=MenuAction(contents,-1612,"",function()
+  laneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1580))
+  local bankOneStack=MenuAction(contents,Y(-1612),"",function()
     Apply("SetOneStack",not (bank and bank.GetOneStack and bank.GetOneStack()))
   end)
   bankOneStack:SetWidth(295)
   local stackSwitch=CreateFrame("Button",nil,contents)
   stackSwitch:SetSize(66,25)
-  stackSwitch:SetPoint("TOPLEFT",contents,"TOPLEFT",352,-1612)
+  stackSwitch:SetPoint("TOPLEFT",contents,"TOPLEFT",352,Y(-1612))
   stackSwitch:SetFrameLevel(bankOneStack:GetFrameLevel()+2)
   local stackTrack=stackSwitch:CreateTexture(nil,"ARTWORK")
   stackTrack:SetAllPoints(stackSwitch)
@@ -958,10 +966,54 @@ local function BuildBankLayoutOptions(contents,advancedOptions)
   stackSwitch:SetScript("OnClick",function()
     Apply("SetOneStack",not (bank and bank.GetOneStack and bank.GetOneStack()))
   end)
+
+  -- A distinct link is available for every bank presentation preference.
+  -- Automatic edits unlink only the field being changed. Old overrides stay
+  -- persisted while linked, so profile switching cannot erase them.
+  local linkButtons={}
+  local function LinkedButton(key,at)
+    local button=MenuAction(contents,at,"",function()
+      if not prefs or not prefs.Linked then return end
+      local fields={view={"linkBankView","bankView"},
+        standard={"linkBankStandardColumns","bankStandardColumns"},
+        slots={"linkBankCategorySlotColumns","bankCategorySlotColumns"},
+        lanes={"linkBankCategoryColumns","bankCategoryColumns"},
+        stack={"linkBankOneStack","bankOneStack"}}
+      local old=DB()[fields[key][1]]
+      local oldValue=DB()[fields[key][2]]
+      prefs.SetLinked(DB(),key,not prefs.Linked(DB(),key))
+      if bank and bank.RefreshPresentation and bank.IsOpen and bank.IsOpen() and
+          not bank.RefreshPresentation() then
+        DB()[({view="linkBankView",standard="linkBankStandardColumns",
+          slots="linkBankCategorySlotColumns",lanes="linkBankCategoryColumns",
+          stack="linkBankOneStack"})[key]]=old
+        DB()[fields[key][2]]=oldValue
+        Print("Finish the current bank or cursor action before changing links.")
+      else
+        if NS.Profiles then NS.Profiles.Capture() end
+      end
+      if updateSettingsOptions then updateSettingsOptions() end
+    end)
+    button:SetWidth(125)
+    button:ClearAllPoints()
+    button:SetPoint("TOPLEFT",contents,"TOPLEFT",310,at)
+    linkButtons[#linkButtons+1]={key=key,button=button}
+    return button
+  end
+  LinkedButton("standard",Y(-1322))
+  LinkedButton("slots",Y(-1429))
+  LinkedButton("lanes",Y(-1520))
+  LinkedButton("stack",Y(-1645)-25)
+  advancedOptions[#advancedOptions+1]=function()
+    for _,row in ipairs(linkButtons) do
+      row.button.menuLabel:SetText(prefs.Linked(DB(),row.key) and
+        "[X] LINKED" or "[ ] CUSTOM")
+    end
+  end
   local oneNote=MakeLabel(contents,
     "Collapsed bank categories always show unique items, regardless of One Stack.",
     "GameFontHighlightSmall",{.65,.72,.78})
-  oneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,-1645)
+  oneNote:SetPoint("TOPLEFT",contents,"TOPLEFT",16,Y(-1645))
   advancedOptions[#advancedOptions+1]=function()
     if not bank then return end
     local std=bank.GetStandardColumns() or 10
@@ -1020,7 +1072,9 @@ local function BuildOptions()
   local viewport,contents=ScrollPage()
   local diagnosticView,diagnostics=ScrollPage()
   local categoriesView,categoriesBody=ScrollPage()
-  diagnosticView:Hide();categoriesView:Hide()
+  local bankView,bankBody=ScrollPage()
+  diagnosticView:Hide();categoriesView:Hide();bankView:Hide()
+  bankBody:SetHeight(640)
 
   -- Background dragging uses cursor deltas instead of nested StartMoving(),
   -- preserving the proven parent/child UI movement boundary from the bags.
@@ -1067,6 +1121,8 @@ local function BuildOptions()
   BindEmpty(diagnostics)
   BindEmpty(categoriesBody)
   BindEmpty(categoriesView)
+  BindEmpty(bankBody)
+  BindEmpty(bankView)
   -- The scrollframes have no their own click actions. Let their blank regions
   -- start dragging as well; buttons/editboxes/sliders retain normal input.
   BindEmpty(viewport)
@@ -1080,17 +1136,22 @@ local function BuildOptions()
     EndMove()
     if profileList then profileList:Hide() end
     if which=="diagnostics" then
-      viewport:Hide();categoriesView:Hide();diagnosticView:Show();diagnosticView:SetVerticalScroll(0)
+      viewport:Hide();categoriesView:Hide();bankView:Hide();diagnosticView:Show();diagnosticView:SetVerticalScroll(0)
       back:Show();title:SetText("OBSIDIAN BAGS  /  DIAGNOSTICS")
       title:ClearAllPoints();title:SetPoint("TOPLEFT",options,"TOPLEFT",182,-16)
     elseif which=="categories" then
-      viewport:Hide();diagnosticView:Hide()
+      viewport:Hide();diagnosticView:Hide();bankView:Hide()
       categoriesView:Show();categoriesView:SetVerticalScroll(0)
       back:Show();title:SetText("OBSIDIAN BAGS  /  CATEGORIES")
       title:ClearAllPoints();title:SetPoint("TOPLEFT",options,"TOPLEFT",182,-16)
       if NS.CategoryManager then NS.CategoryManager.Show() end
+    elseif which=="bank" then
+      viewport:Hide();diagnosticView:Hide();categoriesView:Hide()
+      bankView:Show();bankView:SetVerticalScroll(0)
+      back:Show();title:SetText("OBSIDIAN BAGS  /  BANK VIEW")
+      title:ClearAllPoints();title:SetPoint("TOPLEFT",options,"TOPLEFT",182,-16)
     else
-      diagnosticView:Hide();categoriesView:Hide();viewport:Show();back:Hide()
+      diagnosticView:Hide();categoriesView:Hide();bankView:Hide();viewport:Show();back:Hide()
       title:SetText("OBSIDIAN BAGS  /  OPTIONS")
       title:ClearAllPoints();title:SetPoint("TOPLEFT",options,"TOPLEFT",20,-16)
     end
@@ -1493,6 +1554,7 @@ local function BuildOptions()
       local ok,reason=controls.setInventoryView("standard")
       if not ok then Print(reason or "View change refused") end
     end
+    if NS.BankPanel and NS.BankPanel.RefreshPresentation then NS.BankPanel.RefreshPresentation() end
     if updateSettingsOptions then updateSettingsOptions() end
   end)
   standardChoice:SetWidth(390)
@@ -1501,6 +1563,7 @@ local function BuildOptions()
       local ok,reason=controls.setInventoryView("category")
       if not ok then Print(reason or "View change refused") end
     end
+    if NS.BankPanel and NS.BankPanel.RefreshPresentation then NS.BankPanel.RefreshPresentation() end
     if updateSettingsOptions then updateSettingsOptions() end
   end)
   categoryChoice:SetWidth(390)
@@ -1523,12 +1586,73 @@ local function BuildOptions()
   layoutContents:SetSize(contents:GetWidth(),1680)
   layoutContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-190)
   BuildLayoutOptions(layoutContents,advancedOptions)
-  BuildBankLayoutOptions(layoutContents,advancedOptions)
+  local bankSettingsButton=MenuAction(contents,-1475,"Bank View Settings  >",function()
+    ShowPage("bank")
+  end)
+  bankSettingsButton:SetWidth(390)
+  local bankPrefs=NS.BankViewPreferences
+  Header(bankBody,"BANK VIEW",-10)
+  local bankStandard=MenuAction(bankBody,-40,"",function()
+    local ok,why=NS.BankPanel.SetView("standard")
+    if not ok then Print(why or "Bank view change refused") end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  bankStandard:SetWidth(390)
+  local bankCategory=MenuAction(bankBody,-70,"",function()
+    local ok,why=NS.BankPanel.SetView("category")
+    if not ok then Print(why or "Bank view change refused") end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  bankCategory:SetWidth(390)
+  local bankLinkAll=MenuAction(bankBody,-109,"",function()
+    local names={"linkBankView","linkBankStandardColumns",
+      "linkBankCategorySlotColumns","linkBankCategoryColumns","linkBankOneStack",
+      "bankView","bankStandardColumns","bankCategorySlotColumns",
+      "bankCategoryColumns","bankOneStack"}
+    local old={}
+    for _,flag in ipairs(names) do
+      old[flag]=DB()[flag]==nil and "__unset__" or DB()[flag]
+    end
+    local enable=not bankPrefs.AllLinked(DB())
+    bankPrefs.SetAllLinked(DB(),enable)
+    if NS.BankPanel and NS.BankPanel.IsOpen and NS.BankPanel.IsOpen() and
+        not NS.BankPanel.RefreshPresentation() then
+      for flag,value in pairs(old) do
+        DB()[flag]=value=="__unset__" and nil or value
+      end
+      Print("Finish bank transactions before changing links.")
+    elseif NS.Profiles then NS.Profiles.Capture() end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  bankLinkAll:SetWidth(390)
+  advancedOptions[#advancedOptions+1]=function()
+    local mode=NS.BankPanel and NS.BankPanel.GetView and NS.BankPanel.GetView() or "standard"
+    bankStandard.menuLabel:SetText((mode=="standard" and "[X]  " or "[ ]  ").."Standard")
+    bankCategory.menuLabel:SetText((mode=="category" and "[X]  " or "[ ]  ").."Category View")
+    bankLinkAll.menuLabel:SetText(bankPrefs.AllLinked(DB()) and
+      "[X] UNLINK ALL 5 BANK VIEW SETTINGS" or "[ ] LINK ALL 5 BANK VIEW SETTINGS")
+  end
+  local modeLink=MenuAction(bankBody,-11,"",function()
+    local old=DB().linkBankView
+    bankPrefs.SetLinked(DB(),"view",not bankPrefs.Linked(DB(),"view"))
+    if NS.BankPanel and NS.BankPanel.IsOpen and NS.BankPanel.IsOpen() and
+        not NS.BankPanel.RefreshPresentation() then
+      DB().linkBankView=old
+      Print("Finish bank transactions before changing view linkage.")
+    elseif NS.Profiles then NS.Profiles.Capture() end
+    if updateSettingsOptions then updateSettingsOptions() end
+  end)
+  modeLink:SetWidth(100)
+  modeLink:ClearAllPoints();modeLink:SetPoint("TOPLEFT",bankBody,"TOPLEFT",332,-11)
+  advancedOptions[#advancedOptions+1]=function()
+    modeLink.menuLabel:SetText(bankPrefs.Linked(DB(),"view") and "[X] LINKED" or "[ ] CUSTOM")
+  end
+  BuildBankLayoutOptions(bankBody,advancedOptions)
   -- Bank sizing and Developer / Maintenance retain their established local
   -- spacing and are shifted down below the newly ordered view settings.
   local lowerContents=CreateFrame("Frame",nil,contents)
   lowerContents:SetSize(contents:GetWidth(),2100)
-  lowerContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-920)
+  lowerContents:SetPoint("TOPLEFT",contents,"TOPLEFT",0,-540)
 
   local prefs=NS.PanelPreferences
   Header(lowerContents,"BANK / INVENTORY SIZING",-1015)
@@ -1627,7 +1751,7 @@ local function BuildOptions()
     "Commands and maintenance actions are available on a separate page.",
     "GameFontHighlightSmall",{.65,.72,.78})
   diagNote:SetPoint("TOPLEFT",lowerContents,"TOPLEFT",16,-1665)
-  contents:SetHeight(2800)
+  contents:SetHeight(2550)
   if NS.CategoryManager then
     NS.CategoryManager.Initialize(categoriesBody,{
       canEdit=function()

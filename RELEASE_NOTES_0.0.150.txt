@@ -1,0 +1,17 @@
+Obsidian Bags v0.0.150 - Opt-in native item placement combat experiment
+
+- Introduces /obplace arm | status | disarm, separate from the prior /obdrop read-only diagnostic.
+- When armed outside combat, shows two plainly bounded, mouse-intercepting buttons
+  to manually attempt Blizzard PutItemInBackpack() or PutItemInBag() on one click.
+- Calls are restricted to held Linen Cloth (item 2589) only: no bags/quivers,
+  equipment, rare items, or arbitrary cursor objects. Bag 1 must be verified
+  as equipped and mapped to its true inventorySlot out of combat.
+- This is a REAL item placement experiment. If Blizzard permits the action it
+  may consolidate/move cheap Linen Cloth. The call may instead be blocked.
+  Each click makes exactly ONE Blizzard call; no retry, cursor clearing,
+  physical-slot guessing, fallback move, or saved mapping changes.
+- Chat diagnostics disclose combat state, destination, error/return and cursor
+  status; a no-error result is NOT proof of placement.
+- All 57 previous Lua modules from v0.0.149 are unchanged.
+- Combat blank-background dropping is NOT IMPLEMENTED. No changes to B-key,
+  combat preparation, native item controls, bank, Sort, SELL, or profiles.

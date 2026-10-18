@@ -98,6 +98,22 @@ end
 function V.AnyCollapsed()
   return V.Collapsed("main") or V.Collapsed("ammo") or V.Collapsed("reagent")
 end
+-- The bank-to-bag background receiver must not consider read-only Standard
+-- summaries or clickable collapse headings to be empty deposit destinations.
+function V.HitInteractive(x,y)
+  if type(x)~="number" or type(y)~="number" then return false end
+  local function Inside(f)
+    if not f or not f.IsShown or not f:IsShown() then return false end
+    local l,r,t,b=f:GetLeft(),f:GetRight(),f:GetTop(),f:GetBottom()
+    return type(l)=="number" and type(r)=="number" and
+      type(t)=="number" and type(b)=="number" and
+      x>=l and x<=r and y>=b and y<=t
+  end
+  for _,tile in ipairs(summaryTiles) do if Inside(tile) then return true end end
+  for _,arrow in pairs(arrows) do if Inside(arrow) then return true end end
+  for _,label in pairs(labels) do if Inside(label) then return true end end
+  return false
+end
 
 -- Build a DISPLAY-ONLY description for every visible native slot. The
 -- originalIndex is the saved-layout index used by all real drag transactions.
@@ -320,6 +336,36 @@ end
 function V.HideHeaders()
   for _,label in pairs(labels) do if label then label:Hide() end end
   for _,arrow in pairs(arrows) do if arrow then arrow:Hide() end end
+end
+-- Preserve the normal Standard canvas's existing cosmetic state on combat
+-- entry. Core may intentionally postpone re-rendering if a real item remains
+-- on the cursor at combat exit. Restore the frozen presentation until then.
+local combatPresentation
+function V.SuspendPresentation()
+  if combatPresentation then return end
+  local frames={}
+  local function Save(f)
+    if f then
+      frames[#frames+1]={frame=f,shown=f:IsShown(),
+        alpha=f.GetAlpha and f:GetAlpha() or 1}
+    end
+  end
+  for _,f in pairs(labels) do Save(f) end
+  for _,f in pairs(arrows) do Save(f) end
+  for _,f in ipairs(summaryTiles) do Save(f) end
+  combatPresentation=frames
+  V.HideSummaries()
+  V.HideHeaders()
+end
+function V.ResumePresentation()
+  if not combatPresentation then return end
+  local frames=combatPresentation
+  combatPresentation=nil
+  for _,record in ipairs(frames) do
+    local f=record.frame
+    if f.SetAlpha then f:SetAlpha(record.alpha) end
+    if record.shown then f:Show() else f:Hide() end
+  end
 end
 function V.HeaderPad() return TOP_PAD end
 

@@ -1,0 +1,18 @@
+Obsidian Bags v0.0.161 — permanent guarded combat Shift-source proof
+
+Client-proven v160 fallback ON by default for locked source slots reporting
+unchanged pre-split stack count. Unlike the previously attempted broad source
+gate in v154, the v153 native split-deposit path remains first and unchanged.
+New fallback cannot authorize untracked pickups or a changed item/slot/link.
+
+The existing native ClearCursor ordinary pickup/drag cancellation stays ON;
+no automatic category reflow/reanchor in combat, no change to physical sort,
+combat secure button scripts, storage constraints, banks, or SavedVariables.
+
+/obcombatdrop lockedsource on|off remains a session-only selective fallback
+switch outside combat; default after reload: ON.
+
+Release QA: Shift-split formerly failing locked sources (Strider Meat,
+Sunscale Feather, Tigerseye), control Linen/Leather split, standard pickup
+blank cancellation, hold-drag release, multiple bags, combat B and restored
+postcombat layout; quiver empty-slot grouping intentionally deferred.

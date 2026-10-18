@@ -149,29 +149,66 @@ local function Earlier(a, b)
   return false
 end
 
-local function Keys(tokens, entries)
+-- Grey-quality junk and explicitly marked SELL stacks are always last in
+-- their PHYSICAL SECTION's *virtual* token order, before real empty slots.
+-- Passing nil records retains existing callers (notably bank Sort) unchanged.
+function Policy.IsJunkTail(token,entry,records)
+  return (records and records[token] and records[token].junk==true) or
+    (entry and entry.quality==0) or false
+end
+local function Keys(tokens, entries, records)
   local flags, keys = {}, {}
   for index, token in ipairs(tokens) do
     local entry = entries[token]
-    if entry then keys[#keys + 1] = MakeKey(token, entry, index, flags) end
+    if entry then
+      local key=MakeKey(token, entry, index, flags)
+      if records and Policy.IsJunkTail(token,entry,records) then
+        key.rank=100 -- after pending metadata and all ordinary categories
+        key.category="junk"
+      end
+      keys[#keys + 1]=key
+    end
   end
   table.sort(keys, Earlier)
   return keys
 end
 
-function Policy.SortTokens(tokens, entries)
-  local sorted, result = Keys(tokens, entries), {}
+-- Reverse ordinary sort preference must not move junk before non-junk.
+-- Preserve junk's final position, whether expanded or One Stack collapsed.
+function Policy.ReverseNonJunk(sorted,entries,records)
+  local lastNormal=0
+  for i,token in ipairs(sorted) do
+    if not Policy.IsJunkTail(token,entries[token],records) then
+      lastNormal=i
+    end
+  end
+  for left=1,math.floor(lastNormal/2) do
+    local right=lastNormal-left+1
+    sorted[left],sorted[right]=sorted[right],sorted[left]
+  end
+  return sorted
+end
+
+function Policy.SortTokens(tokens, entries, records)
+  local sorted, result = Keys(tokens, entries, records), {}
   for index, key in ipairs(sorted) do result[index] = key.token end
   return result
 end
 
 -- Read-only explainability for /vb sort preview. Returns original per-stack
 -- tokens, not flattened item IDs; duplicate stack identities stay distinct.
-function Policy.Preview(tokens, entries, limit, reverse)
-  local sorted = Keys(tokens, entries)
+function Policy.Preview(tokens, entries, limit, reverse, records)
+  local sorted = Keys(tokens, entries, records)
   if reverse then
-    for left=1,math.floor(#sorted/2) do
-      local right=#sorted-left+1
+    -- Reverse ordinary ranks while keeping SELL and grey junk at the tail.
+    local lastNormal=0
+    for index,key in ipairs(sorted) do
+      if not Policy.IsJunkTail(key.token,entries[key.token],records) then
+        lastNormal=index
+      end
+    end
+    for left=1,math.floor(lastNormal/2) do
+      local right=lastNormal-left+1
       sorted[left],sorted[right]=sorted[right],sorted[left]
     end
   end

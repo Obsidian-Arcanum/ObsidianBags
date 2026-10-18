@@ -39,27 +39,36 @@ local function Btn(parent,tooltip,asset,letter,fn)
   end)
   return b
 end
-function B.Apply()
+-- The main Options opacity slider owns one shared skin opacity value.
+-- Painting the bank uses that value immediately, without causing a bank
+-- rescan, item-button repaint, or changing independent bank sizing settings.
+function B.ApplyBackground()
   if not panel or (InCombatLockdown and InCombatLockdown()) then return end
-  styled=DB().uiSkin~="diagnostic"
   local db=DB()
-  frame:SetShown(styled);backdrop:SetShown(styled);tint:SetShown(styled)
-  veil:SetShown(styled);emblem:SetShown(styled)
-  local appearance=db.appearance and db.appearance[styled and "fancy" or "diagnostic"] or {}
+  local styledNow=db.uiSkin~="diagnostic"
+  local appearance=db.appearance and db.appearance[styledNow and "fancy" or "diagnostic"] or {}
   local alpha=math.max(0,math.min(1,tonumber(appearance.opacity) or 1))
-  if styled then
+  if styledNow then
     panel:SetBackdropColor(.01,.016,.026,.78*alpha)
     panel:SetBackdropBorderColor(.55,.46,.32,.98)
     backdrop:SetAlpha(.96*alpha)
     tint:SetColorTexture(appearance.r or .08,appearance.g or .21,appearance.b or .34,
       appearance.custom and .42*alpha or 0)
     veil:SetColorTexture(.01,.02,.035,.20*alpha)
-    emblem:SetAlpha(.13*alpha)
+    emblem:SetAlpha(.16*alpha)
   else
     panel:SetBackdropColor(appearance.r or .045,appearance.g or .055,
       appearance.b or .072,.97*alpha)
     panel:SetBackdropBorderColor(.36,.52,.66,.95)
   end
+end
+function B.Apply()
+  if not panel or (InCombatLockdown and InCombatLockdown()) then return end
+  styled=DB().uiSkin~="diagnostic"
+  local db=DB()
+  frame:SetShown(styled);backdrop:SetShown(styled);tint:SetShown(styled)
+  veil:SetShown(styled);emblem:SetShown(styled)
+  B.ApplyBackground()
   if oldButtons then
     for _,b in pairs(oldButtons) do b:SetShown(false) end
   end
@@ -196,7 +205,7 @@ function B.Initialize(args)
   caption:SetPoint("TOPLEFT",filterPopup,"TOPLEFT",12,-9)
   caption:SetText("SAVED FILTERS")
   filterButtons={};filterPopup:Hide()
-  buttons.sort=Btn(panel,"Sort this bank only","Sort","S",function()
+  buttons.sort=Btn(panel,"Sort bank and consolidate matching physical stacks","Sort","S",function()
     if not (ns.BankCachedViewer and ns.BankCachedViewer.IsViewing()) then args.sortAction() end
   end)
   buttons.sort:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-46,-10)

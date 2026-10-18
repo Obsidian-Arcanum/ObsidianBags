@@ -1,0 +1,58 @@
+OBSIDIAN BAGS v0.0.135 - Bank Category Sort Visibility Repair
+WoW Forever 1.60.1 / Interface 16001
+
+TEST CANDIDATE - local Lua simulation and ZIP validation passed;
+actual Forever client verification required.
+Rollback: keep the latest user-tested ObsidianBags v0.0.134 archive.
+
+BUG FIX
+- Bank Sort was updating the saved visual bank token order correctly, but
+  BankCategoryView.Build() sorted every category by physical bank bag/slot
+  positions again. This hid the result of bank Sort in Category View.
+- Bank Category View now respects the saved virtual layout's originalIndex
+  within each category, so bank Sort, manual visual moves and persistence
+  all share one consistent presentation order.
+- Bank Sort remains VISUAL ONLY. It does NOT physically reorganize bank tabs
+  or bypass bank transfer/cursor/stack protections.
+- Section placement and category priority still come from shared category
+  registry/classifier. Sorting affects order of items inside each category.
+- This also applies to unique-item collapse and Bank One Stack summaries.
+
+SCOPE
+- Only BankCategoryView.lua and the TOC version changed in program code.
+- BankModel.lua, BankPanel.lua, OneStack.lua, StackWork.lua,
+  CrossTransfer.lua, cached bank viewer, Profiles/settings, and ALL
+  combat/protected-native-button modules match v0.0.134 byte-for-byte.
+- v0.0.134 One Stack inspector fixes, search, Basic diagnostic cleanup,
+  advanced category geometry and other visuals remain unchanged.
+
+LOCAL VALIDATION
+- 54 TOC Lua files compile using available Lua 5.4.
+- Real SortPolicy -> BankModel.Sort -> BankCategoryView.Build/Plan integration
+  verified against unsorted and sorted virtual token maps, including
+  realistic 37/60 bank contents, custom group priority and missing slots.
+- Second Sort is stable; manual virtual swap can be sorted again.
+- Fully occupied, completely empty, collapsed-to-unique and One Stack
+  summary coverage checks passed; bank physical source identity unchanged.
+- New sort order survives a fresh authoritative bank read/reconciliation.
+
+FOREVER CLIENT TESTS
+1. Open a bank with Category View, disable One Stack, expand Crafting
+   Materials, manually swap two distinct items, then click Bank Sort.
+   Visible item order should change to the sorted order (not physically).
+2. Switch to Standard View and press Bank Sort. Verify the saved visual order
+   is sorted there too, then switch back to Category View.
+3. Enable Bank One Stack; collapse a duplicate-heavy category, press Sort,
+   and inspect an aggregate. The total, real source rows, Shift-split and
+   other existing interactions should remain correct.
+4. /reload at a banker, reopen bank and verify the sorted appearance persists.
+5. Withdraw and deposit one inexpensive item. No physical bank move should
+   happen merely by clicking Sort.
+6. A short main inventory Sort and secure combat B-key/regain-normal-layout
+   smoke test should remain unchanged.
+7. If Sort is still inert, try /vb bank sort and report /vb bank status,
+   including current view, bankLayout kind and transaction state.
+
+Caution: a bank that is already sorted will not visibly change on subsequent
+Sort presses. The most diagnostic test is sorting after a deliberate virtual
+rearrangement of distinct stacks in one category.

@@ -32,10 +32,13 @@ local function Read(b,s)
   local ok,x=pcall(C_Container.GetContainerItemInfo,b,s)
   return ok and Safe(x) or nil,ok and (x==nil or type(Safe(x))=="table")
 end
-local function Bad(batchMerge,allowPopupCombat)
+local function Bad(batchMerge,allowPopupCombat,bankOnly)
   if trial or split or dialog or quick then return "another stack transaction is active" end
-  if not ns.MainPanel or not ns.MainPanel.CanRunStackWork or
-      not ns.MainPanel.CanRunStackWork(batchMerge,allowPopupCombat) then return "virtual main inventory is busy or not open" end
+  if not bankOnly and (not ns.MainPanel or not ns.MainPanel.CanRunStackWork or
+      not ns.MainPanel.CanRunStackWork(batchMerge,allowPopupCombat)) then return "virtual main inventory is busy or not open" end
+  if not bankOnly and ns.BankSort and ns.BankSort.IsBusy and ns.BankSort.IsBusy() then
+    return "bank physical Sort is active"
+  end
   if ns.CrossTransfer and ns.CrossTransfer.IsBusy and ns.CrossTransfer.IsBusy() then return "cross-window exchange is active" end
   if ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy() and
       not (batchMerge and ns.PhysicalBatch.IsMergeAuthorized and
@@ -437,6 +440,53 @@ function M.StartAutomaticMerge(move, callback)
   end
   return ExecuteMerge({source=s,dest=d,id=s.itemID,amount=move.amount,
     max=max,direction="bag-to-bag",automatic=true,onVerified=callback})
+end
+
+-- Physical bank Sort is bank-only: do not require the carried bag window
+-- to be open, but retain all ordinary cursor, lock, identity and proof gates.
+function M.MergeBankAutomatic(source,destination,callback)
+  if type(callback)~="function" or not ns.BankSort or not ns.BankSort.IsBusy() then
+    return false,"no authorized bank Sort session"
+  end
+  local bad=Bad(false,false,true)
+  if bad then return false,bad end
+  if not ns.BankModel or not ns.BankModel.CanRead() then return false,"bank unavailable" end
+  if not M.MatchesTarget(source,destination) or
+      source.bagID==destination.bagID and source.slotID==destination.slotID then
+    return false,"invalid bank-only exact-link candidate"
+  end
+  if type(source.bagID)~="number" or source.bagID<=5 or
+      type(destination.bagID)~="number" or destination.bagID<=5 or
+      type(source.count)~="number" or type(destination.count)~="number" then
+    return false,"not two physical bank stacks"
+  end
+  local cap=Limit(source.itemID,source,true)
+  local amount=cap and math.min(source.count,cap-destination.count) or 0
+  if not cap or cap<=1 or amount<=0 or
+      not (amount==source.count or source.count<=destination.count) then
+    return false,"bank consolidation is not a monotonic safe merge"
+  end
+  local a,ao=Read(source.bagID,source.slotID)
+  local b,bo=Read(destination.bagID,destination.slotID)
+  if not ao or not bo or not Exact(a,source,true) or not Exact(b,destination,true) then
+    return false,"live bank stack changed before pickup"
+  end
+  local function GUIDStillMatches(e)
+    if not e.guid then return true end
+    if not ItemLocation or not ItemLocation.CreateFromBagAndSlot or
+        not C_Item or not C_Item.GetItemGUID then return false end
+    local ok,value=pcall(function()
+      return C_Item.GetItemGUID(ItemLocation:CreateFromBagAndSlot(e.bagID,e.slotID))
+    end)
+    return ok and Safe(value)==e.guid
+  end
+  if not GUIDStillMatches(source) or not GUIDStillMatches(destination) then
+    return false,"bank source/destination GUID changed or unavailable"
+  end
+  -- Token identities are not moved by Sort. Source/destination are verified
+  -- again by ExecuteMerge, and completion is quantity-conservation proven.
+  return ExecuteMerge({source=source,dest=destination,id=source.itemID,
+    amount=amount,max=cap,direction="bank-to-bank",onVerified=callback,automatic=true})
 end
 
 function M.MergeOne(id,direction)

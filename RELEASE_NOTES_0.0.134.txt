@@ -1,0 +1,36 @@
+OBSIDIAN BAGS v0.0.134 - Bank One Stack Inspector State Fix
+WoW Forever 1.60.1 / Interface 16001
+
+TEST CANDIDATE - local validation only; client verification required.
+Rollback: keep the last user-tested ObsidianBags v0.0.133 ZIP.
+
+FOCUSED FIXES
+- Bank One Stack remains enabled after left-clicking a physical stack in its
+  inspector. The old "reveal" action silently set bankOneStack=false and
+  left settings visually out of sync. The new left-click only selects and
+  highlights the verified physical source within the inspector; it does not
+  reflow the bank or change any persisted preference.
+- Right-click continues guarded quick-withdraw. Shift-left continues
+  guarded physical stack splitting. No change to their physical engines.
+- Inspector labels show "Stack 1   x20" etc., with no bank bag/slot indices.
+- Removed the physical bank slot coordinate from ordinary bank item tooltip.
+- Bank Standard/Category, collapse-to-unique, summary totals, tabs, frame
+  sizing, linked settings and all secure combat architecture unchanged.
+
+FOREVER CLIENT TESTS
+1. Enable Bank One Stack in Category View; open an aggregate and left-click
+   one then another physical row. The bank must stay aggregated, pop-out
+   stays open and the selected row highlights. Setting remains ON.
+2. Close and reopen inspector, switch Category <-> Standard, expand/collapse
+   categories and /reload. One Stack must remain ON until explicitly turned
+   OFF in settings; an OFF -> ON toggle must take exactly one click.
+3. Check pop-out labels: "Stack N xCount", no "6-9"/"6-17" physical indices.
+4. Try Shift-left split of a physical inspector row and small right-click
+   withdrawal, then a normal bank-to-bag and bag-to-bank deposit.
+5. With One Stack OFF, collapse a category to unique items; click its summary.
+   Inspector selection must not implicitly enable One Stack or expand bank.
+6. No further combat work was changed. Do a quick B-key combat open/close,
+   item split and normal-layout restoration smoke test.
+7. Revisit offline cached bank, search and Standard collapse if time allows.
+
+Do not treat local tests as actual Forever client confirmation.

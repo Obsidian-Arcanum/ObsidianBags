@@ -6,7 +6,7 @@ ns.BankPanel = {}
 local P = ns.BankPanel
 local M = ns.BankModel
 local panel,scroll,child,status,diagnostic,searchBox
-local bankHeader,bankSummary,bankViewToggle
+local bankHeader,bankSummary
 local buttons = {}
 local rows,shownEntries,physicalFingerprint = {},{},nil
 -- A live scan is not a rendered bank. Track them separately: external
@@ -17,6 +17,8 @@ local scanAttempts,scanReason=0,"awaiting banker"
 local last, tabs, changed, scans, moves = "not scanned", 0, 0, 0, 0
 local selected,dragging,ghost,lastDragAt = nil,nil,nil,0
 local bankDragSession
+local bankCursorSession -- authenticated real BANK source held on native cursor
+local PhysicalSourceMatches -- defined after live cursor/physical validation helpers
 local splitDropReceiver,splitDropCallback,splitDropSerial=nil,nil,0
 local splitDropPressed=false
 -- A NORMAL Blizzard item cursor is not a virtual bank ghost. Accept it on a
@@ -45,7 +47,12 @@ local function Database()
   return VirtualBagsLabDB
 end
 local function BankCollapsed() return Database().collapseBank==true end
-local function BankView() return Database().bankView=="category" and "category" or "standard" end
+local function Effective(key)
+  local pref=ns.BankViewPreferences
+  return pref and pref.Get(Database(),key)
+end
+local function BankView() return Effective("view") or
+  (Database().bankView=="category" and "category" or "standard") end
 local function Text(parent,value,font,color)
   local label=parent:CreateFontString(nil,"OVERLAY",font or "GameFontNormal")
   if color then label:SetTextColor(color[1],color[2],color[3]) end
@@ -73,12 +80,21 @@ local function MouseIsClear()
   return ok and Safe(kind)==nil
 end
 local function SafeToEdit()
-  return M.CanRead() and MouseIsClear() and
+  if bankCursorSession and MouseIsClear() and not dragging and not bankDragSession and
+      PhysicalSourceMatches and PhysicalSourceMatches(bankCursorSession) then
+    -- Recover only a fully verified, unchanged PHYSICAL source after Blizzard
+    -- has cancelled the real cursor. Never infer correctness from nil alone.
+    bankCursorSession=nil
+    selected=nil
+    if ns.MainPanel and ns.MainPanel.EndBankDrag then ns.MainPanel.EndBankDrag() end
+  end
+  return not bankCursorSession and M.CanRead() and MouseIsClear() and
     not (ns.CrossTransfer and ns.CrossTransfer.IsBusy()) and
     not (ns.StackWork and ns.StackWork.IsBusy and ns.StackWork.IsBusy()) and
     not (InCombatLockdown and InCombatLockdown()) and
     not (ns.PhysicalMove and ns.PhysicalMove.IsBusy and ns.PhysicalMove.IsBusy()) and
-    not (ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy())
+    not (ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy()) and
+    not (ns.BankSort and ns.BankSort.IsBusy and ns.BankSort.IsBusy())
 end
 local function SetStatus(extra)
   if not status then return end
@@ -103,7 +119,6 @@ local function Tooltip(button)
     local ok=pcall(GameTooltip.SetHyperlink,GameTooltip,e.link)
     if not ok then GameTooltip:SetText(e.name or ("Item "..e.itemID)) end
   else GameTooltip:SetText(e.name or ("Item "..e.itemID)) end
-  GameTooltip:AddLine("Virtual Bank: physical slot "..e.slotKey,.72,.82,1)
   GameTooltip:AddLine("Drag inside bank to rearrange visually",.5,.9,.5)
   GameTooltip:AddLine("Drag to carried bag: verified physical transfer",.85,.67,.46)
   GameTooltip:AddLine("Right-click: consolidate matching stacks, then withdraw remainder",.65,.86,1)
@@ -199,6 +214,7 @@ end
 -- bank slot that was read as empty immediately before invoking the native API.
 -- A slot chosen by the virtual icon never overrides physical eligibility.
 function P.AcceptExternalCursor(index,route)
+  if bankCursorSession then return false end -- our own verified pickup, not a foreign deposit
   local id=CursorItem()
   if not id then return false end
   externalStats.attempted=externalStats.attempted+1
@@ -305,6 +321,39 @@ local function HitTest()
   end
   return nil
 end
+local function PointInFrame(widget)
+  if not widget or not widget:IsShown() or not GetCursorPosition then return false end
+  local x,y=GetCursorPosition()
+  local scale=widget:GetEffectiveScale()
+  local l,r,t,b=widget:GetLeft(),widget:GetRight(),widget:GetTop(),widget:GetBottom()
+  return scale and l and r and t and b and
+    x>=l*scale and x<=r*scale and y<=t*scale and y>=b*scale
+end
+local function FirstRealBlank()
+  local layout=M.GetLayout()
+  for i=1,#layout do
+    local b=buttons[i]
+    local e=b and b.entry
+    if layout[i]==false and e and not e.itemID and e.bagID and e.slotID then
+      return i
+    end
+  end
+end
+local function DropIndexOrBlank()
+  local index=HitTest()
+  if index then return index end
+  if GetCursorPosition then
+    local x,y=GetCursorPosition()
+    if ns.BankStackPopover and ns.BankStackPopover.GetDropTargetAt then
+      local _,over=ns.BankStackPopover.GetDropTargetAt(x,y)
+      if over then return nil end
+    end
+    if ns.BankCategoryView and ns.BankCategoryView.IsOverSummary and
+        ns.BankCategoryView.IsOverSummary(x,y) then return nil end
+  end
+  if PointInFrame(scroll) then return FirstRealBlank() end
+  return nil
+end
 local function Place(a,b)
   if not SafeToEdit() then
     last="visual move deferred: bank closed, cursor held, combat, or physical operation"
@@ -330,23 +379,123 @@ local function Place(a,b)
     RefreshDisplay()
   end
 end
-local function Ghost()
-  if ghost then return ghost end
-  ghost=CreateFrame("Frame",nil,UIParent)
-  ghost:SetFrameStrata("TOOLTIP")
-  ghost:SetSize(35,35)
-  ghost.icon=ghost:CreateTexture(nil,"ARTWORK")
-  ghost.icon:SetAllPoints()
-  ghost.icon:SetAlpha(.78)
-  ghost:SetScript("OnUpdate",function(self)
-    if not dragging then self:Hide();return end
-    local x,y=GetCursorPosition()
-    local scale=UIParent:GetEffectiveScale()
-    self:ClearAllPoints()
-    self:SetPoint("CENTER",UIParent,"BOTTOMLEFT",x/scale+15,y/scale-15)
-  end)
-  ghost:Hide()
-  return ghost
+-- Native item cursor for bank UI. Unlike the older ghost texture (which
+-- left the hand cursor visible), this uses a REAL bank pickup. ClearCursor
+-- is permitted only for this recorded source, after cursor provenance proof.
+-- The source is re-read after return before any saved token is changed.
+local function HeldSourceMatches(session)
+  if not session or not GetCursorInfo then return false end
+  local ok,kind,id,link=pcall(GetCursorInfo)
+  if not ok or Safe(kind)~="item" or Safe(id)~=session.entry.itemID then return false end
+  link=Safe(link)
+  return type(link)~="string" or link==session.entry.link
+end
+PhysicalSourceMatches = function(session)
+  if not session or not M.CanRead() then return false end
+  local e=session.entry
+  local ok,physical=pcall(C_Container.GetContainerItemInfo,e.bagID,e.slotID)
+  if not ok or not physical or Safe(physical.isLocked) or
+      Safe(physical.itemID)~=e.itemID or
+      Safe(physical.stackCount)~=e.count or
+      (e.link and Safe(physical.hyperlink)~=e.link) or
+      M.GetLayout()[session.index]~=session.token then return false end
+  if e.guid then
+    if not ItemLocation or not ItemLocation.CreateFromBagAndSlot or
+        not C_Item or not C_Item.GetItemGUID then return false end
+    local got,guid=pcall(function()
+      return C_Item.GetItemGUID(ItemLocation:CreateFromBagAndSlot(e.bagID,e.slotID))
+    end)
+    if not got or Safe(guid)~=e.guid then return false end
+  end
+  return true
+end
+local function BeginBankCursor(index,entry,token)
+  if not SafeToEdit() or bankCursorSession or not entry or not entry.itemID or
+      not C_Container or not C_Container.PickupContainerItem or not ClearCursor then
+    return false,"native bank cursor not available"
+  end
+  local session={index=index,entry=entry,token=token}
+  if not PhysicalSourceMatches(session) then return false,"physical bank stack changed" end
+  local ok=pcall(C_Container.PickupContainerItem,entry.bagID,entry.slotID)
+  if not ok or not HeldSourceMatches(session) then
+    -- Never ClearCursor on an item whose provenance was not established.
+    return false,"native pickup not verified; inspect cursor before continuing"
+  end
+  bankCursorSession=session
+  return true
+end
+local function ReturnBankCursor(session)
+  if bankCursorSession~=session or not HeldSourceMatches(session) then
+    return false,"held cursor does not match the recorded bank source"
+  end
+  local ok=pcall(ClearCursor)
+  if not ok or not MouseIsClear() then
+    return false,"native cursor return could not be verified"
+  end
+  bankCursorSession=nil
+  return true
+end
+local function AfterNativeReturn(session,callback,cancelled)
+  local started=Clock()
+  local function Poll()
+    if not M.CanRead() or (InCombatLockdown and InCombatLockdown()) or
+        not panel or not panel:IsShown() then return end
+    -- If Blizzard independently consumed the cursor, verify that the real
+    -- source is back AND that nothing else is now held before disarming.
+    if (not cancelled or MouseIsClear()) and PhysicalSourceMatches(session) then
+      callback()
+    elseif Clock()-started<1.2 then
+      C_Timer.After(.045,Poll)
+    else
+      last=cancelled and
+        "bank cursor cancelled but original physical source not verified; interaction remains blocked" or
+        "bank native cursor returned but physical source did not stabilize; virtual move cancelled"
+      print("|cff8ad9ffObsidian Bags:|r "..last)
+      SetStatus()
+    end
+  end
+  C_Timer.After(.035,Poll)
+end
+local function StartBankDrag(index,entry,token)
+  local original=buttons[index]
+  if not SafeToEdit() or type(index)~="number" or not original or original.entry~=entry or
+      original.token~=token or not entry or not entry.itemID or
+      dragging or bankDragSession or bankCursorSession or
+      externalDeposit or splitDropCallback then
+    return false,"Bank drag source or transaction state is unavailable."
+  end
+  local ok,why=BeginBankCursor(index,entry,token)
+  if not ok then return false,why end
+  dragging=index
+  bankDragSession={index=index,token=token,entry=entry,resolved=false,
+    mode="drag",sawPress=IsMouseButtonDown and IsMouseButtonDown("LeftButton") or false}
+  if ns.CrossTransfer and ns.CrossTransfer.TraceDrag then
+    ns.CrossTransfer.TraceDrag("bank-native-drag-start", "source="..entry.bagID..":"..
+      entry.slotID.." id="..entry.itemID.." cell="..index)
+  end
+  selected=nil
+  if ns.MainPanel and ns.MainPanel.BeginBankDrag then
+    ns.MainPanel.BeginBankDrag(function(trigger)
+      if P.ResolveBankDrag then P.ResolveBankDrag(index,trigger) end
+    end)
+  end
+  last="native bank drag from visual cell "..index
+  SetStatus()
+  return true
+end
+local function StartBankSelection(index,entry,token)
+  local ok,why=BeginBankCursor(index,entry,token)
+  if not ok then return false,why end
+  selected=index
+  bankDragSession={index=index,token=token,entry=entry,resolved=false,mode="click"}
+  if ns.MainPanel and ns.MainPanel.BeginBankClick then
+    ns.MainPanel.BeginBankClick(function(trigger)
+      if P.ResolveBankDrag then P.ResolveBankDrag(index,trigger) end
+    end)
+  end
+  last="native bank click-pickup from visual cell "..index
+  SetStatus()
+  return true
 end
 local function NewButton(i)
   local button=CreateFrame("Button",nil,child,"BackdropTemplate")
@@ -360,8 +509,7 @@ local function NewButton(i)
   button:SetBackdropBorderColor(1,.8,.3,0)
   button.labSlotBackground,button.labSlotRim=ns.SlotArt.Apply(button)
   button.icon=button:CreateTexture(nil,"ARTWORK")
-  button.icon:SetPoint("TOPLEFT",button,"TOPLEFT",2,-2)
-  button.icon:SetPoint("BOTTOMRIGHT",button,"BOTTOMRIGHT",-2,2)
+  button.icon:SetAllPoints(button)
   button.count=Text(button,"","NumberFontNormal",{1,1,1})
   button.count:SetPoint("BOTTOMRIGHT",button,"BOTTOMRIGHT",-2,2)
   button.count:SetDrawLayer("OVERLAY",5)
@@ -374,7 +522,15 @@ local function NewButton(i)
   button:SetScript("OnEnter",function(self) Tooltip(self) end)
   button:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
   button:SetScript("OnClick",function(self,mouseButton)
+    if mouseButton=="LeftButton" and bankCursorSession and bankDragSession then
+      P.ResolveBankDrag(bankDragSession.index,"bank-native-click")
+      return
+    end
     if mouseButton=="LeftButton" and CursorItem() then
+      -- Main bag native-click/drag origins own their physical cursor.
+      -- Never run a second bank pickup while their source is pending.
+      if ns.MainPanel and ns.MainPanel.FinishCarriedBankDrop and
+          ns.MainPanel.FinishCarriedBankDrop("bank-button-click") then return end
       if P.AcceptExternalCursor then P.AcceptExternalCursor(i,"bank-button-click") end
       return
     end
@@ -393,49 +549,30 @@ local function NewButton(i)
       return
     end
     if mouseButton~="LeftButton" or not SafeToEdit() then return end
-    if selected and selected~=i then
-      Place(selected,i)
-    else
-      selected=(selected==i) and nil or (self.entry and self.entry.itemID and i or nil)
-      RefreshDisplay()
+    if self.entry and self.entry.itemID then
+      local ok,reason=StartBankSelection(i,self.entry,self.token)
+      if not ok and reason then print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
     end
   end)
   -- Stock backpack drag-release calls OnReceiveDrag on the destination.
   -- This is addon-owned and never invokes a protected native OnClick script.
   button:SetScript("OnReceiveDrag",function(self)
-    if CursorItem() and P.AcceptExternalCursor then
-      P.AcceptExternalCursor(i,"physical-bank-receive")
-    end
+    if bankCursorSession or not CursorItem() then return end
+    if ns.MainPanel and ns.MainPanel.FinishCarriedBankDrop and
+        ns.MainPanel.FinishCarriedBankDrop("bank-button-receive") then return end
+    if P.AcceptExternalCursor then P.AcceptExternalCursor(i,"physical-bank-receive") end
   end)
   button:SetScript("OnMouseUp",function(self,mouseButton)
-    if mouseButton=="LeftButton" and CursorItem() and P.AcceptExternalCursor then
-      P.AcceptExternalCursor(i,"physical-bank-mouse-up")
+    if mouseButton=="LeftButton" and not bankCursorSession and CursorItem() then
+      if ns.MainPanel and ns.MainPanel.FinishCarriedBankDrop and
+          ns.MainPanel.FinishCarriedBankDrop("bank-button-mouse-up") then return end
+      if P.AcceptExternalCursor then P.AcceptExternalCursor(i,"physical-bank-mouse-up") end
     end
   end)
   button:SetScript("OnDragStart",function(self)
     if IsShiftKeyDown and IsShiftKeyDown() then return end
-    if not self.entry or not self.entry.itemID or not SafeToEdit() then return end
-    -- The source is our addon-owned virtual bank button, not a native item.
-    -- Copy its actual physical provenance before beginning the visual drag.
-    dragging=i
-    bankDragSession={index=i,token=self.token,entry=self.entry,resolved=false}
-    if ns.CrossTransfer and ns.CrossTransfer.TraceDrag then
-      ns.CrossTransfer.TraceDrag("bank-drag-start", "source="..self.entry.bagID..":"..
-        self.entry.slotID.." id="..self.entry.itemID.." cell="..i)
-    end
-    selected=nil
-    local g=Ghost()
-    g.icon:SetTexture(self.entry.texture)
-    g:Show()
-    -- Temporarily shield the carried bag's native item buttons from an
-    -- unrelated bank ghost's drop. Never cover the bag during ordinary use.
-    if ns.MainPanel and ns.MainPanel.BeginBankDrag then
-      ns.MainPanel.BeginBankDrag(function(trigger)
-        if P.ResolveBankDrag then P.ResolveBankDrag(i,trigger) end
-      end)
-    end
-    last="dragging visual bank cell "..i.."; physical bank untouched"
-    SetStatus()
+    local ok,reason=StartBankDrag(i,self.entry,self.token)
+    if not ok and reason then print("|cff8ad9ffObsidian Bags:|r "..tostring(reason)) end
   end)
   button:SetScript("OnDragStop",function(self)
     if P.ResolveBankDrag then P.ResolveBankDrag(i,"bank-source-drag-stop") end
@@ -451,53 +588,102 @@ function P.ResolveBankDrag(index,trigger)
   if ns.CrossTransfer and ns.CrossTransfer.TraceDrag then
     ns.CrossTransfer.TraceDrag("bank-drag-release", "cell="..index.." trigger="..tostring(trigger))
   end
-  local target=HitTest()
+  -- The source may come from a bank One Stack popup. Prefer its physical
+  -- icons over bank cells drawn underneath the popup. A popup-background
+  -- release is intentionally a no-op rather than a hidden-bank click.
+  local popupTarget,overPopup=nil,false
+  if GetCursorPosition and ns.BankStackPopover and
+      ns.BankStackPopover.GetDropTargetAt then
+    local x,y=GetCursorPosition()
+    popupTarget,overPopup=ns.BankStackPopover.GetDropTargetAt(x,y)
+  end
+  local target=not overPopup and DropIndexOrBlank() or nil
+  if popupTarget then
+    local live=buttons[popupTarget.originalIndex]
+    if live and live.token==popupTarget.token and live.entry==popupTarget.entry then
+      target=popupTarget.originalIndex
+    else
+      target=nil -- stale popup source must not redirect a physical merge
+    end
+  end
   local crossTarget=nil
-  if not target and ns.MainPanel and ns.MainPanel.GetCrossTarget then
+  if not target and not overPopup and ns.MainPanel and ns.MainPanel.GetCrossTarget then
     crossTarget=ns.MainPanel.GetCrossTarget()
   end
-  -- Keep the main-bag receiver for one short post-release window so late
-  -- native OnReceiveDrag/OnClick cannot pick up an unrelated physical item.
+  -- A real cursor must return to its known physical bank source BEFORE any
+  -- virtual move or guarded physical transaction can begin. The target is
+  -- captured before clearing, then both token and physical source are re-read.
   if ns.MainPanel and ns.MainPanel.EndBankDrag then ns.MainPanel.EndBankDrag() end
-  EndGhost()
+  local source=bankCursorSession
+  dragging=nil
   bankDragSession=nil
   lastDragAt=Clock()
-  if target and target~=index then
-    Place(index,target)
-  elseif crossTarget and ns.CrossTransfer then
-    crossDropAttempts=crossDropAttempts+1
-    -- Exact same-item cross-window drops are explicit TARGETED MERGES.
-    -- This is not a two-item exchange, and must never choose an arbitrary
-    -- earlier stack instead of the cell the user deliberately selected.
-    if crossTarget.entry and ns.StackWork and ns.StackWork.MatchesTarget and
-        ns.StackWork.MatchesTarget(session.entry,crossTarget.entry) then
-      local original=session.entry
-      local chosen=crossTarget.entry
-      local marked=crossTarget.marked
-      C_Timer.After(0,function()
-        ns.StackWork.MergeTargeted(original,chosen,"bank-to-bag",false,marked)
-      end)
-      last="targeted same-item bank-to-bag merge requested"
-      RefreshDisplay()
-      return
-    end
-    local ok,why=ns.CrossTransfer.Prepare(session.entry,index,crossTarget,session.token)
-    if ok then
-      crossDropReady=crossDropReady+1
-      last="cross transfer auto-start requested: "..tostring(why)
-      local started,reason=ns.CrossTransfer.AutoCommit()
-      if not started then last="cross transfer refused: "..tostring(reason) end
-    else
-      crossDropRejected=crossDropRejected+1
-      last="cross transfer refused: "..tostring(why)
-      print("|cff8ad9ffObsidian Bags:|r CROSS-WINDOW REFUSED: "..tostring(why))
-    end
-    RefreshDisplay()
-  else
-    last="bank visual drag ended "..tostring(trigger or "")..
-      (target==index and " on original bank cell" or " outside a valid virtual cell")
-    RefreshDisplay()
+  selected=nil
+  if not source or source.index~=session.index or source.token~=session.token then
+    last="bank drag lacked authenticated native source; nothing rearranged"
+    SetStatus()
+    return
   end
+  if MouseIsClear() then
+    -- A second mouse button can cause Blizzard to return the native bank
+    -- cursor while the original left-drag is still active. This is a
+    -- CANCELLED interaction, never a successful virtual or physical drop.
+    -- Keep the source locked until its original GUID/link/count/slot and the
+    -- saved token are independently confirmed again.
+    last="bank drag cancelled by Blizzard; verifying original physical stack"
+    SetStatus()
+    AfterNativeReturn(source,function()
+      if bankCursorSession~=source or not MouseIsClear() then return end
+      bankCursorSession=nil
+      selected=nil
+      P.Refresh(true)
+      last="bank native drag cancelled safely; original physical stack verified"
+      SetStatus()
+    end,true)
+    return
+  end
+  local returned,returnWhy=ReturnBankCursor(source)
+  if not returned then
+    last="bank cursor return STOPPED: "..tostring(returnWhy)
+    print("|cff8ad9ffObsidian Bags:|r "..last)
+    SetStatus()
+    return
+  end
+  AfterNativeReturn(source,function()
+    if target and target~=index then
+      Place(index,target)
+    elseif crossTarget and ns.CrossTransfer then
+      crossDropAttempts=crossDropAttempts+1
+      if crossTarget.entry and ns.StackWork and ns.StackWork.MatchesTarget and
+          ns.StackWork.MatchesTarget(session.entry,crossTarget.entry) then
+        local original=session.entry
+        local chosen=crossTarget.entry
+        local marked=crossTarget.marked
+        C_Timer.After(0,function()
+          ns.StackWork.MergeTargeted(original,chosen,"bank-to-bag",false,marked)
+        end)
+        last="targeted same-item bank-to-bag merge requested"
+        RefreshDisplay()
+        return
+      end
+      local ok,why=ns.CrossTransfer.Prepare(session.entry,index,crossTarget,session.token)
+      if ok then
+        crossDropReady=crossDropReady+1
+        last="cross transfer auto-start requested: "..tostring(why)
+        local started,reason=ns.CrossTransfer.AutoCommit()
+        if not started then last="cross transfer refused: "..tostring(reason) end
+      else
+        crossDropRejected=crossDropRejected+1
+        last="cross transfer refused: "..tostring(why)
+        print("|cff8ad9ffObsidian Bags:|r CROSS-WINDOW REFUSED: "..tostring(why))
+      end
+      RefreshDisplay()
+    else
+      last="bank native pickup returned "..tostring(trigger or "")..
+        (target==index and " on original bank cell" or " outside a valid virtual cell")
+      RefreshDisplay()
+    end
+  end)
 end
 local function EnsureButtons(count)
   for i=#buttons+1,count do buttons[i]=NewButton(i) end
@@ -529,7 +715,6 @@ Paint=function(button,token,entry)
 end
 RefreshDisplay=function()
   if not child or not scroll or not panel then return false end
-  if ns.BankStackPopover then ns.BankStackPopover.Hide() end
   local db=Database()
   local prefs=ns.PanelPreferences
   local size=math.max(30,math.min(42,math.floor((tonumber(
@@ -537,7 +722,7 @@ RefreshDisplay=function()
   local gap=math.max(2,math.min(10,math.floor((tonumber(
     prefs and prefs.Get(db,"bank","gridSpacing") or db.gridSpacing) or 4)+.5)))
   SIZE,SPACE=size,size+gap
-  COLUMNS=math.max(9,math.floor(tonumber(db.bankStandardColumns or db.mainColumns) or 10))
+  COLUMNS=Effective("standard") or math.max(9,math.floor(tonumber(db.bankStandardColumns or db.mainColumns) or 10))
   local cols=COLUMNS
   local isCategory=BankView()=="category"
   local collapsed=not isCategory and BankCollapsed()
@@ -562,13 +747,13 @@ RefreshDisplay=function()
     local adapter=ns.BankCategoryView
     if not adapter then return false end
     local descriptors,sections,why,coverage=adapter.Build(layout,shownEntries,rows,
-      db.bankCategoryCollapsed,db.bankOneStack==true,db.bankItems)
+      db.bankCategoryCollapsed,P.GetOneStack(),db.bankItems)
     if not descriptors then
       last="bank Category View refused: "..tostring(why)
       return false
     end
     local plan,planError=adapter.Plan(descriptors,sections,
-      P.GetCategorySlotColumns(),SPACE,db.bankCategoryColumns or 2,
+      P.GetCategorySlotColumns(),SPACE,P.GetCategoryColumns(),
       UIParent and UIParent.GetWidth and UIParent:GetWidth())
     if not plan then
       last="bank Category View geometry refused: "..tostring(planError)
@@ -609,7 +794,7 @@ RefreshDisplay=function()
     adapter.ShowSummaries(child,plan,searchQuery)
   else
     if ns.BankCategoryView then ns.BankCategoryView.Hide() end
-    local oneStack=db.bankOneStack==true
+    local oneStack=P.GetOneStack()
     if not oneStack then
       -- Preserve the client-verified Standard renderer byte-for-byte in its
       -- default OFF state, including the old occupied + one-empty collapse.
@@ -692,10 +877,10 @@ RefreshDisplay=function()
         (collapsed and "TriangleRight" or "TriangleDown")..".tga")
     end
   end
-  if bankViewToggle then
-    bankViewToggle:SetText(isCategory and "Category View" or "Standard View")
-  end
   if bankSummary then bankSummary:Hide() end
+  if ns.BankStackPopover and ns.BankStackPopover.Sync then
+    ns.BankStackPopover.Sync(layout,shownEntries,db.bankItems)
+  end
   SetStatus()
   if ns.BankSkin and ns.BankSkin.Apply then ns.BankSkin.Apply() end
   return true
@@ -748,14 +933,37 @@ local function ConfigureGeometry(key,value,minimum,maximum,fallback)
   if ns.Profiles then ns.Profiles.Capture() end
   return true
 end
-function P.SetStandardColumns(n) return ConfigureGeometry("bankStandardColumns",n,9,18,10) end
-function P.SetCategoryColumns(n) return ConfigureGeometry("bankCategoryColumns",n,1,4,2) end
-function P.SetCategorySlotColumns(n) return ConfigureGeometry("bankCategorySlotColumns",n,6,16,6) end
-function P.GetStandardColumns() return Database().bankStandardColumns or Database().mainColumns or 10 end
-function P.GetCategoryColumns() return Database().bankCategoryColumns or 2 end
-function P.GetCategorySlotColumns() return math.max(6,math.min(16,
-  tonumber(Database().bankCategorySlotColumns) or 6)) end
-function P.GetOneStack() return Database().bankOneStack==true end
+local function SetBankGeometry(key,field,value,low,high,fallback)
+  if (InCombatLockdown and InCombatLockdown()) or not MouseIsClear() or
+      bankDragSession or externalDeposit or splitDropCallback or
+      (ns.CrossTransfer and ns.CrossTransfer.IsBusy and ns.CrossTransfer.IsBusy()) or
+      (ns.StackWork and ns.StackWork.IsBusy and ns.StackWork.IsBusy()) then
+    return false,"Finish combat and item transfers before changing bank geometry."
+  end
+  local db=Database()
+  local desired=math.max(low,math.min(high,math.floor(tonumber(value) or fallback)))
+  if Effective(key)==desired then return true end
+  local pref=ns.BankViewPreferences
+  local old,oldLink=db[field],db[({standard="linkBankStandardColumns",slots="linkBankCategorySlotColumns",lanes="linkBankCategoryColumns"})[key]]
+  if pref then pref.UnlinkAndSet(db,key,desired) else db[field]=desired end
+  if panel and panel:IsShown() and #rows>0 and not RefreshDisplay() then
+    db[field]=old
+    if pref then db[({standard="linkBankStandardColumns",slots="linkBankCategorySlotColumns",lanes="linkBankCategoryColumns"})[key]]=oldLink end
+    RefreshDisplay()
+    return false,"Could not safely render requested bank geometry."
+  end
+  selected=nil
+  if ns.Profiles then ns.Profiles.Capture() end
+  return true
+end
+function P.SetStandardColumns(n) return SetBankGeometry("standard","bankStandardColumns",n,9,18,10) end
+function P.SetCategoryColumns(n) return SetBankGeometry("lanes","bankCategoryColumns",n,1,4,2) end
+function P.SetCategorySlotColumns(n) return SetBankGeometry("slots","bankCategorySlotColumns",n,6,16,6) end
+function P.GetStandardColumns() return Effective("standard") or Database().bankStandardColumns or 10 end
+function P.GetCategoryColumns() return Effective("lanes") or Database().bankCategoryColumns or 2 end
+function P.GetCategorySlotColumns() return Effective("slots") or Database().bankCategorySlotColumns or 6 end
+function P.GetOneStack() local v=Effective("stack"); if v~=nil then return v end
+  return Database().bankOneStack==true end
 function P.SetOneStack(value)
   if not MouseIsClear() or (InCombatLockdown and InCombatLockdown()) or
       bankDragSession or externalDeposit or splitDropCallback or dragging or
@@ -765,10 +973,11 @@ function P.SetOneStack(value)
     return false,"Finish bank, cursor or physical transactions before changing Bank One Stack."
   end
   local db=Database()
-  local old=db.bankOneStack
-  db.bankOneStack=value==true
+  local old,oldLink=db.bankOneStack,db.linkBankOneStack
+  if ns.BankViewPreferences then ns.BankViewPreferences.UnlinkAndSet(db,"stack",value)
+  else db.bankOneStack=value==true end
   if panel and panel:IsShown() and #rows>0 and not RefreshDisplay() then
-    db.bankOneStack=old
+    db.bankOneStack,db.linkBankOneStack=old,oldLink
     RefreshDisplay()
     return false,"Bank One Stack could not be displayed safely."
   end
@@ -808,24 +1017,16 @@ function P.SummarySourceAction(source,categoryID,action,owner)
       return false,"Stack split engine unavailable."
     end
     return ns.StackWork.OpenSplit(current,index,owner or button,"bank")
-  elseif action=="reveal" then
-    local db=Database()
-    local category=BankView()=="category"
-    local previousCollapse=db.bankCategoryCollapsed and db.bankCategoryCollapsed[categoryID]
-    local previousStack=db.bankOneStack
-    if category then
-      if type(db.bankCategoryCollapsed)~="table" then db.bankCategoryCollapsed={} end
-      db.bankCategoryCollapsed[categoryID]=false
-    end
-    db.bankOneStack=false
-    if not RefreshDisplay() then
-      if category then db.bankCategoryCollapsed[categoryID]=previousCollapse end
-      db.bankOneStack=previousStack
-      RefreshDisplay()
-      return false,"Unable to reveal the physical bank source."
-    end
-    selected=nil
-    if ns.Profiles then ns.Profiles.Capture() end
+  elseif action=="drag" then
+    -- Bank inspector drag is only another entry point into the original
+    -- bank virtual-drag coordinator after live token/slot verification.
+    -- Its source button may be hidden by One Stack; it is never rebound.
+    return StartBankDrag(index,current,button.token)
+  elseif action=="inspect" then
+    -- This is a non-mutating selection of a *physical* stack inside the
+    -- inspector. Never disable the saved One Stack preference or open the
+    -- underlying hidden bank button to implement inspection. Actual split
+    -- and withdrawal continue through the guarded actions above.
     return true
   end
   return false,"Unknown bank inspector action."
@@ -835,18 +1036,27 @@ end
 -- bank drag, split, or physical transaction could invalidate hit targets.
 function P.SetView(view)
   if view~="standard" and view~="category" then return false end
-  if not SafeToEdit() or bankDragSession or externalDeposit or splitDropCallback then return false end
+  -- Options is available without a banker. Do not require live bank access
+  -- to save a presentation preference for the next open.
+  if (InCombatLockdown and InCombatLockdown()) or not MouseIsClear() or
+      bankDragSession or externalDeposit or splitDropCallback or
+      (ns.CrossTransfer and ns.CrossTransfer.IsBusy and ns.CrossTransfer.IsBusy()) or
+      (ns.StackWork and ns.StackWork.IsBusy and ns.StackWork.IsBusy()) or
+      (panel and panel:IsShown() and not SafeToEdit()) then
+    return false,"Finish combat or item transactions before changing Bank View."
+  end
   if BankView()==view then return true end
   local db=Database()
-  local previous=db.bankView
-  db.bankView=view
-  if not RefreshDisplay() then
-    db.bankView=previous
+  local previous,oldLink=db.bankView,db.linkBankView
+  if ns.BankViewPreferences then ns.BankViewPreferences.UnlinkAndSet(db,"view",view)
+  else db.bankView=view end
+  if panel and panel:IsShown() and not RefreshDisplay() then
+    db.bankView,db.linkBankView=previous,oldLink
     RefreshDisplay()
-    return false
+    return false,"Could not safely render selected bank view."
   end
   selected=nil
-  if scroll then scroll:SetVerticalScroll(0) end
+  if scroll and panel and panel:IsShown() then scroll:SetVerticalScroll(0) end
   if ns.Profiles then ns.Profiles.Capture() end
   return true
 end
@@ -878,7 +1088,7 @@ local function AnyBankSlotVisible()
   end
   if ns.BankCategoryView and ns.BankCategoryView.HasVisibleHeader and
       ns.BankCategoryView.HasVisibleHeader() and
-      (BankView()=="category" or Database().bankOneStack==true) then
+      (BankView()=="category" or P.GetOneStack()) then
     return true
   end
   return false
@@ -968,11 +1178,22 @@ function P.ResetPhysical()
   RefreshDisplay()
 end
 function P.Sort()
-  if not SafeToEdit() or #rows==0 or
+  if not SafeToEdit() or bankDragSession or bankCursorSession or #rows==0 or
       (ns.BankCachedViewer and ns.BankCachedViewer.IsViewing()) then return end
   M.Sort(shownEntries)
   selected=nil
-  last="bank visually sorted; real bank unchanged"
+  last="bank visually sorted; checking matching physical stacks"
+  RefreshDisplay()
+  if ns.BankSort then
+    local ok,why=ns.BankSort.Start()
+    if not ok then last="bank visually sorted; physical consolidation refused: "..tostring(why) end
+    SetStatus()
+  end
+end
+function P.FinishBankSort()
+  if not M.CanRead() then return end
+  P.Refresh(true)
+  M.Sort(shownEntries)
   RefreshDisplay()
 end
 local function Button(parent,caption,width,fn)
@@ -1083,10 +1304,6 @@ local function Build()
   close:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-5,-5)
   close:SetScript("OnClick",function()
     closedByUser=true
-    selected=nil
-    bankDragSession=nil
-    if ns.MainPanel and ns.MainPanel.EndBankDrag then ns.MainPanel.EndBankDrag() end
-    EndGhost()
     panel:Hide()
   end)
   local reset=Button(panel,"Reset Physical",104,P.ResetPhysical)
@@ -1118,8 +1335,31 @@ local function Build()
   child=CreateFrame("Frame",nil,scroll)
   child:SetSize(VIEW_WIDTH+5,1)
   scroll:SetScrollChild(child)
+  local function DepositOnBlank()
+    -- A second bank click on blank background completes bank click-pickup.
+    -- Foreign carried cursors still use their own transaction coordinator.
+    if bankCursorSession and bankDragSession and bankDragSession.mode=="click" then
+      P.ResolveBankDrag(bankDragSession.index,"bank-background-click")
+      return
+    end
+    if bankCursorSession or not CursorItem() then return end
+    if ns.MainPanel and ns.MainPanel.FinishCarriedBankDrop and
+        ns.MainPanel.FinishCarriedBankDrop("bank-background-drop") then return end
+    local index=DropIndexOrBlank()
+    if index and M.GetLayout()[index]==false then P.AcceptExternalCursor(index,"bank-background") end
+  end
+  scroll:EnableMouse(true)
+  scroll:SetScript("OnReceiveDrag",DepositOnBlank)
+  child:EnableMouse(true)
+  child:SetScript("OnReceiveDrag",DepositOnBlank)
   BindBackground(scroll)
   BindBackground(child)
+  scroll:HookScript("OnMouseUp",function(_,key)
+    if key=="LeftButton" then DepositOnBlank() end
+  end)
+  child:HookScript("OnMouseUp",function(_,key)
+    if key=="LeftButton" then DepositOnBlank() end
+  end)
   bankHeader=CreateFrame("Button",nil,child)
   bankHeader:SetSize(170,18)
   bankHeader:SetPoint("TOPLEFT",child,"TOPLEFT",1,-1)
@@ -1160,30 +1400,23 @@ local function Build()
   if ns.SlotArt then ns.SlotArt.Apply(bankSummary) end
   bankSummary:EnableMouse(false)
   bankSummary:Hide()
-  -- Independent bank view toggle: no saved bank token/layout mutation.
-  -- Kept in the bottom-right, clear of the bank tabs and shared search.
-  bankViewToggle=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
-  bankViewToggle:SetSize(119,23)
-  bankViewToggle:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-13,10)
-  bankViewToggle:SetText("Standard View")
-  bankViewToggle:SetScript("OnClick",function()
-    if not P.SetView(BankView()=="standard" and "category" or "standard") then
-      last="finish the bank/cursor action before switching views"
-      SetStatus()
-    end
-  end)
-  bankViewToggle:SetScript("OnEnter",function(self)
-    GameTooltip:SetOwner(self,"ANCHOR_TOP")
-    GameTooltip:SetText("Switch Virtual Bank view")
-    GameTooltip:AddLine("Standard keeps saved bank order; Category groups real bank slots by shared category rules.",.72,.83,1,true)
-    GameTooltip:Show()
-  end)
-  bankViewToggle:SetScript("OnLeave",function(self)
-    if GameTooltip and GameTooltip:IsOwned(self) then GameTooltip:Hide() end
-  end)
+  -- Bank View selection lives exclusively in Options > Bank View Settings.
+  -- No bank-panel toggle or invisible hit target remains.
   status=Text(panel,"Bank: initializing live scan","GameFontHighlightSmall",{.74,.83,.91})
   status:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",16,17)
   panel:SetScript("OnHide",function()
+    if bankCursorSession then
+      local session=bankCursorSession
+      if HeldSourceMatches(session) then
+        local ok,why=ReturnBankCursor(session)
+        if not ok then print("|cff8ad9ffObsidian Bags:|r Bank closed with unverified cursor return: "..tostring(why)) end
+      elseif MouseIsClear() then
+        bankCursorSession=nil
+      else
+        print("|cff8ad9ffObsidian Bags:|r Bank closed with an unexpected held cursor; item left untouched")
+      end
+    end
+    if ns.BankStackPopover then ns.BankStackPopover.Hide() end
     if searchBox then searchBox:ClearFocus() end
     if P.EndSplitDrop then P.EndSplitDrop() end
     selected=nil
@@ -1301,6 +1534,24 @@ watcher:SetScript("OnEvent",function(_,event)
 end)
 local elapsed=0
 watcher:SetScript("OnUpdate",function(_,dt)
+  -- The source's OnDragStop and the main-window receiver do not fire in all
+  -- Forever input sequences, especially when dragging out of a bank One
+  -- Stack inspector and releasing over EMPTY carried-bag background. Watch
+  -- only an authenticated drag whose left press was actually observed.
+  local pending=bankDragSession
+  if pending and pending.mode=="drag" and not pending.resolved and
+      dragging==pending.index and IsMouseButtonDown then
+    if IsMouseButtonDown("LeftButton") then
+      pending.sawPress=true
+    elseif pending.sawPress and not pending.releaseQueued and C_Timer and C_Timer.After then
+      pending.releaseQueued=true
+      C_Timer.After(0,function()
+        if bankDragSession==pending and not pending.resolved and dragging==pending.index then
+          P.ResolveBankDrag(pending.index,"bank-native-release-watch")
+        end
+      end)
+    end
+  end
   elapsed=elapsed+dt
   if elapsed>=.4 then
     elapsed=0
@@ -1369,7 +1620,7 @@ function P.EndSplitDrop()
 end
 function P.GetSplitTarget()
   if not panel or not panel:IsShown() or not M.CanRead() then return nil end
-  local at=HitTest()
+  local at=DropIndexOrBlank()
   if not at or M.GetLayout()[at]~=false then return nil end
   local b=buttons[at]
   local e=b and b.entry
@@ -1418,13 +1669,19 @@ function P.GetCrossTarget()
       (InCombatLockdown and InCombatLockdown()) or
       (ns.PhysicalBatch and ns.PhysicalBatch.IsBusy and ns.PhysicalBatch.IsBusy()) or
       (ns.CrossTransfer and ns.CrossTransfer.IsBusy()) then return nil end
-  local index=HitTest()
+  local index=DropIndexOrBlank()
   if not index or index<1 or index>#rows then return nil end
+  -- HitTest chooses visible item buttons. The background fallback instead
+  -- chooses the earliest REAL empty slot, which may be hidden when Available
+  -- Slots is collapsed. That is an authorized background drop, not a click
+  -- on a hidden occupied item.
+  local button=buttons[index]
+  local visible=button and button:IsShown()
+  if not visible and (M.GetLayout()[index]~=false or not PointInFrame(scroll) or
+      not button or not button.entry or button.entry.itemID) then return nil end
   -- A real carried cursor can finish on a bank button; suppress its
   -- subsequent ordinary click-selection callback, not the physical cursor.
   lastDragAt=Clock()
-  local button=buttons[index]
-  if not button or not button:IsShown() then return nil end
   return {visualIndex=index,token=M.GetLayout()[index],entry=button.entry}
 end
 function P.VerifyCrossTarget(req)
@@ -1464,6 +1721,8 @@ function P.Command(command,Message)
       " visibleSlots="..(function() local n=0;for _,b in ipairs(buttons) do if b:IsShown() then n=n+1 end end;return n end)()..
       " updates="..changed.." errors="..readErrors.."; virtual moves="..moves..
       "; selected="..tostring(selected).."; dragging="..tostring(dragging)..
+      "; cursorSession="..tostring(bankCursorSession~=nil)..
+      "; dragSession="..tostring(bankDragSession and bankDragSession.mode or "none")..
       "; external deposits="..externalStats.attempted.." confirmed="..externalStats.confirmed..
       " placed="..externalStats.visual.." refused="..externalStats.refused..
       " partial="..externalStats.partial.." last="..externalStats.last..
@@ -1471,7 +1730,8 @@ function P.Command(command,Message)
       " rejected="..crossDropRejected.."; right-click withdraw attempted="..quickAttempts..
       " prepared="..quickPrepared.." refused="..quickRefused..
       "; mode="..M.GetKind().."; view="..BankView()..
-      "; bankOneStack="..tostring(Database().bankOneStack==true)..
+      "; bankOneStack="..tostring(P.GetOneStack())..
+      "; bankSort="..(ns.BankSort and ns.BankSort.Status() or "unavailable")..
       "; last="..last.."; bank transfers handled by coordinator")
     return true
   elseif command=="bank refresh" then
@@ -1480,7 +1740,7 @@ function P.Command(command,Message)
     return true
   elseif command=="bank sort" then
     P.Sort()
-    Message("Virtual bank Sort is VISUAL ONLY")
+    Message("Bank Sort: visual order plus verified physical stack consolidation when eligible")
     return true
   elseif command=="bank physical" then
     P.ResetPhysical()

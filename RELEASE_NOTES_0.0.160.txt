@@ -1,0 +1,20 @@
+Obsidian Bags v0.0.160 — opt-in locked-source proof investigation
+
+v159 client report: last refused item=4604 had one matching physical source,
+reported LOCKED, and no accepted Shift evidence; trace printed zero despite
+a later status count of 11 decisions (order/instance not established).
+
+This build adds a guarded experimental fallback OFF by default that
+may authorize one exact empty-slot deposit ONLY if original pre-pickup
+Shift source was captured, item and link remain the same, the source
+remains locked, and its visible count is unchanged. This tests Forever
+showing pre-split counts during pending native cursor transactions.
+
+No global isLocked bypass; no free item movement, automatic retries,
+ClearCursor on split, or changes to native UI handlers.
+
+/obcombatdrop lockedsource on|off (OOC, session only)
+/obcombatdrop why displays untruncated refusal + source summary
+/obcombatdrop trace includes attempt/stop counts
+
+The v157/v159 baseline remains active unchanged when trial is OFF.

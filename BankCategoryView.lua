@@ -50,15 +50,18 @@ function V.Build(layout, present, rows, collapsedStates, oneStack, records)
     end
   end
   local descriptors,sections,coverage={}, {}, {}
-  local function PhysicalOrder(a,b)
-    local ea,eb=a.entry,b.entry
-    if ea.bagID~=eb.bagID then return ea.bagID<eb.bagID end
-    if ea.slotID~=eb.slotID then return ea.slotID<eb.slotID end
+  -- Respect the saved VIRTUAL bank order inside each category.  Sorting
+  -- buckets by physical bagID/slotID made BankModel.Sort() appear broken:
+  -- the model rearranged bankLayout, but Category View immediately put every
+  -- stack back in its physical bank position on screen.  originalIndex is
+  -- the current bankLayout position, and the underlying entry still retains
+  -- its verified real bagID/slotID for all physical actions.
+  local function VisualOrder(a,b)
     return a.originalIndex<b.originalIndex
   end
   local function Add(id,label,bucket)
     if #bucket==0 then return end
-    table.sort(bucket,PhysicalOrder)
+    table.sort(bucket,VisualOrder)
     for _,source in ipairs(bucket) do coverage[#coverage+1]=source end
     local collapsed=type(collapsedStates)=="table" and collapsedStates[id]==true
     local shown=bucket
@@ -177,6 +180,23 @@ function V.Hide()
   for _,font in ipairs(labels) do font:Hide() end
   for _,button in ipairs(arrows) do button:Hide() end
   for _,tile in ipairs(summaryTiles) do tile:Hide() end
+end
+-- Summary icons represent MULTIPLE physical stacks. They are neither
+-- empty bank space nor an individual physical destination for a foreign
+-- bag cursor. Hit-test them before falling back to an available blank.
+function V.IsOverSummary(x,y)
+  if type(x)~="number" or type(y)~="number" then return false end
+  for _,tile in ipairs(summaryTiles) do
+    if tile:IsShown() then
+      local scale=tile:GetEffectiveScale()
+      local l,r,t,b=tile:GetLeft(),tile:GetRight(),tile:GetTop(),tile:GetBottom()
+      if scale and l and r and t and b and
+          x>=l*scale and x<=r*scale and y<=t*scale and y>=b*scale then
+        return true
+      end
+    end
+  end
+  return false
 end
 function V.HasVisibleHeader()
   for _,button in ipairs(arrows) do if button:IsShown() then return true end end

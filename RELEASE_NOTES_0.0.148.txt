@@ -1,0 +1,18 @@
+Obsidian Bags v0.0.148 — Secure native slot-state feasibility probe
+
+OPTIONAL DIAGNOSTIC ONLY. NO COMBAT BLANK-SPACE DROP IMPLEMENTATION.
+
+1. Open your carried inventory out of combat, ensure at least one ordinary
+   backpack slot is empty, and run /obdrop arm. The printed sample addresses
+   are true physical bag:slot identities and precombat occupancy snapshots.
+2. Enter combat with your inventory open. Click the detached probe once with
+   empty cursor. Capture OBDROP secure slots and OBDROP slot lines.
+3. Using only normal native slot controls, move an inexpensive item into a
+   sampled physical slot marked EMPTY if possible. Return the cursor to empty.
+4. Click the probe again; compare live secure-read fields. If no sampled slot
+   can be reliably identified/targeted, skip physical move; do not guess.
+5. Exit combat and /obdrop disarm.
+
+The probe does not dispatch actions, clear cursors, alter protected item
+buttons, or claim secure occupancy has been proven. The actual physical bank
+and main combat code match v0.0.147 byte-for-byte.

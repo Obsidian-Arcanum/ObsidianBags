@@ -12,6 +12,9 @@ local last = "not initialized"
 local preparedHeight, preparedWidth = 1, 1
 local enabled = false
 local lastScrollRange, coverageFallbacks = 0, 0
+-- Read-only preparation audit: report which of the two valid precombat paths
+-- produced the frozen secure slot canvas, and where physical empty slots went.
+local lastPreparePath, preparedUtilityFree, preparedGeneralFree = "none", 0, 0
 -- Separate secure size driver: the shared skinned bag window keeps both its
 -- saved normal geometry and the prepared expanded geometry. The only secure
 -- transition-time action is a preauthorized height change on that same window.
@@ -46,7 +49,20 @@ local function PhysicalDescriptors(entries,categoryMode,ammoBags)
         end
         local b=buckets[id] or buckets.misc
         b[#b+1]=d
-      else free[#free+1]=d end
+      else
+        -- Closed-bag preload and coverage repair both use this PHYSICAL
+        -- descriptor path, not CategoryView.Build. Route specialty-only real
+        -- empty slots exactly as the live Category View does. Crucially, the
+        -- recorded bagID:slotID and every native item button stay untouched.
+        local kind=NS.SectionLayout and NS.SectionLayout.Kind and
+          NS.SectionLayout.Kind(entry.bagID,ammoBags) or "main"
+        if kind=="ammo" or kind=="reagent" then
+          local bucket=buckets.ammunition or buckets.misc
+          bucket[#bucket+1]=d
+        else
+          free[#free+1]=d
+        end
+      end
     end
     for _,def in ipairs(defs) do
       local b=buckets[def.id]
@@ -132,6 +148,16 @@ local function Button(bag,slot)
   sell:SetText("SELL")
   sell:Hide()
   b.labJunkShade,b.labJunkText=shade,sell
+  -- v157 pre-pickup source snapshot, read-only additive hooks.
+  -- The native OnClick, OnMouseDown, OnDragStart and OnDragStop stay untouched.
+  if NS.CombatCursorCancel then
+    pcall(b.HookScript,b,"OnEnter",function(self)
+      NS.CombatCursorCancel.Hover(self,bag,slot)
+    end)
+    pcall(b.HookScript,b,"OnMouseDown",function(self,key)
+      NS.CombatCursorCancel.Press(self,bag,slot,key)
+    end)
+  end
   -- Outside combat style is maintained by the SAME Core.PaintButton routine.
   -- No virtual drag, OnReceiveDrag or OnClick script is installed here.
   if NS.SuppressNativeItemGlows then NS.SuppressNativeItemGlows(b) end
@@ -182,6 +208,9 @@ function E.Initialize(mainWindow,normal,getDB,normalNativeRoot)
   child:SetSize(1,1)
   child:SetFrameLevel(combatScroll:GetFrameLevel()+1)
   combatScroll:SetScrollChild(child)
+  -- v153: ordinary blank combat canvas accepts guarded native exact-slot drops.
+  -- Keep below all original Blizzard physical item buttons, unchanged.
+  if NS.CombatBlankDeposit then NS.CombatBlankDeposit.Initialize(child,combatScroll) end
   combatScroll:SetScript("OnMouseWheel",function(self,delta)
     local max=math.max(0,(child:GetHeight() or 0)-(self:GetHeight() or 0))
     lastScrollRange=max
@@ -257,17 +286,37 @@ local legacyHidden=false
 local function HideLegacyPresentation(force)
   if not enabled or not Combat() or (legacyHidden and not force) then return end
   legacyHidden=true
-  if NS.CategoryView then pcall(NS.CategoryView.Hide) end
+  if NS.CategoryView then
+    if NS.CategoryView.SuspendPresentation then
+      pcall(NS.CategoryView.SuspendPresentation)
+    else pcall(NS.CategoryView.Hide) end
+  end
   if NS.CollapseView then
-    pcall(NS.CollapseView.HideSummaries)
-    pcall(NS.CollapseView.HideHeaders)
+    if NS.CollapseView.SuspendPresentation then
+      pcall(NS.CollapseView.SuspendPresentation)
+    else
+      pcall(NS.CollapseView.HideSummaries)
+      pcall(NS.CollapseView.HideHeaders)
+    end
+  end
+end
+local function RestoreLegacyPresentation()
+  if not legacyHidden or Combat() then return end
+  legacyHidden=false
+  -- Only cosmetic frames are restored. In particular, do NOT reconcile or
+  -- Show/Hide/Rebind a secure native slot while an item is held on the cursor.
+  if NS.CategoryView and NS.CategoryView.ResumePresentation then
+    pcall(NS.CategoryView.ResumePresentation)
+  end
+  if NS.CollapseView and NS.CollapseView.ResumePresentation then
+    pcall(NS.CollapseView.ResumePresentation)
   end
 end
 local watcher=CreateFrame("Frame")
 watcher:RegisterEvent("PLAYER_REGEN_DISABLED")
 watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
 watcher:SetScript("OnEvent",function()
-  if Combat() then HideLegacyPresentation() else legacyHidden=false end
+  if Combat() then HideLegacyPresentation() else RestoreLegacyPresentation() end
 end)
 local elapsed=0
 watcher:SetScript("OnUpdate",function(_,dt)
@@ -275,7 +324,7 @@ watcher:SetScript("OnUpdate",function(_,dt)
   elapsed=elapsed+(dt or 0)
   if elapsed<.12 then return end
   elapsed=0
-  if Combat() then HideLegacyPresentation() else legacyHidden=false end
+  if Combat() then HideLegacyPresentation() else RestoreLegacyPresentation() end
 end)
 function E.HideLegacy(force) HideLegacyPresentation(force==true) end
 
@@ -284,7 +333,9 @@ function E.Prepare(entries,layout,viewEntries,blanks,mainCap,ammoCap,reagentCap,
   local db=DB()
   local category=NS.CategoryView and NS.CategoryView.IsActive(db)
   local descriptors,groups,vm,va,vr
+  local preparationPath="closed-physical-preload"
   if type(layout)=="table" and type(viewEntries)=="table" and type(blanks)=="table" then
+    preparationPath="reconciled-layout"
     if category then
       descriptors,vm,va,groups=NS.CategoryView.Build(layout,viewEntries,blanks,
         mainCap,ammoCap,reagentCap,true)
@@ -313,7 +364,25 @@ function E.Prepare(entries,layout,viewEntries,blanks,mainCap,ammoCap,reagentCap,
   end
   if not complete or #descriptors~=#(entries or {}) then
     descriptors,groups=PhysicalDescriptors(entries,category,ammoBags)
+    preparationPath="physical-coverage-repair"
     coverageFallbacks=coverageFallbacks+1
+  end
+  lastPreparePath=preparationPath
+  preparedUtilityFree,preparedGeneralFree=0,0
+  if category then
+    local index=1
+    for _,section in ipairs(groups or {}) do
+      for i=1,(section.count or 0) do
+        local d=descriptors[index];index=index+1
+        if d and d.entry and not d.entry.itemID then
+          if section.id=="ammunition" then
+            preparedUtilityFree=preparedUtilityFree+1
+          elseif section.id=="available" then
+            preparedGeneralFree=preparedGeneralFree+1
+          end
+        end
+      end
+    end
   end
   local size,cell=NS.BagGeometry.Metrics(db)
   local plan
@@ -503,6 +572,9 @@ function E.Status()
   return "expanded combat: armed="..tostring(enabled).." slots="..prepared..
     " empty="..preparedEmpty.." scrollMax="..math.floor(lastScrollRange)..
     " coverageFallbacks="..coverageFallbacks..
+    " prepPath="..lastPreparePath..
+    " utilityEmpty="..preparedUtilityFree..
+    " generalEmpty="..preparedGeneralFree..
     " area="..math.floor(preparedWidth).."x"..math.floor(preparedHeight)..
     " heights="..normalHeight.."/"..combatHeight..
     " actual="..math.floor((bagWindow and bagWindow:GetHeight()) or 0)..
@@ -513,4 +585,9 @@ function E.Status()
     (geometryError and (" sizeError="..geometryError) or "")..
     " refresh="..refreshes.." painted="..paints.." errors="..failures.." last="..last
 end
+-- Read-only canvas references for the opt-in v151 blank-background experiment.
+-- Creating the receiver remains explicitly OUT of combat; no secure scripts
+-- or native physical item buttons are rebound or modified by this accessor.
+function E.Canvas() return enabled and child or nil end
+function E.Scroll() return enabled and combatScroll or nil end
 function E.Buttons() return buttons end
