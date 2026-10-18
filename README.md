@@ -186,7 +186,7 @@ This project is distributed under the terms of its [LICENSE](LICENSE) file.
 
 <p align="center">
   <a href="https://github.com/Obsidian-Arcanum">
-    <img src="https://github.com/Obsidian-Arcanum.png" alt="Obsidian Arcanum emblem" width="110">
+    <img src="https://github.com/Obsidian-Arcanum.png" alt="Obsidian Arcanum emblem" width="260">
   </a>
 </p>
 
