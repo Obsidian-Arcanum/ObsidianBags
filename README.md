@@ -17,6 +17,40 @@ From a compact, unified bag to an extensively organized category view, Obsidian 
 - Create custom categories with drag-and-drop item placement or comma-separated item IDs.
 - Arrange categories and layout elements to suit your preferences.
 
+#### Standard View: everything in one place
+
+A unified inventory keeps items together for familiar, straightforward access, while dedicated inventory sections can be collapsed or expanded when you need more detail.
+
+<p align="center">
+  <img src="images/standard-fancy-collapsed.png" alt="Obsidian Bags Standard View in the Fancy theme with sections collapsed" width="519">
+</p>
+
+<details>
+<summary><strong>See Standard View with sections expanded</strong></summary>
+
+<p align="center">
+  <img src="images/standard-fancy-expanded.png" alt="Obsidian Bags Standard View showing additional slots in expanded sections" width="519">
+</p>
+
+</details>
+
+#### Category View: organization on your terms
+
+Group items into named categories, arrange those categories across columns, and collapse individual sections to control how much of your inventory is visible.
+
+<p align="center">
+  <img src="images/category-fancy-collapsed.png" alt="Obsidian Bags Category View in the Fancy theme with several sections collapsed" width="626">
+</p>
+
+<details>
+<summary><strong>See Category View with sections expanded</strong></summary>
+
+<p align="center">
+  <img src="images/category-fancy-expanded.png" alt="Obsidian Bags Category View with crafting materials, utility items, and available slots expanded" width="631">
+</p>
+
+</details>
+
 ### Optimized sorting
 
 Obsidian Bags separates the *virtual arrangement* of items from their *physical storage*. Its sorting engine is designed to do useful work without rearranging items unnecessarily:
@@ -34,12 +68,24 @@ Use the **Sort** control whenever you like, or turn on **sort when opening your 
 
 **Alt-click** an unwanted item to mark it as junk. When you visit a vendor, Obsidian Bags automatically sells the items you've marked.
 
+**Junk category and SELL indicators**
+
+<p align="center">
+  <img src="images/junk-category.png" alt="Junk category displaying an item marked to sell" width="261">
+  &nbsp;&nbsp;
+  <img src="images/sell-preview.png" alt="Inventory item icons displaying the SELL indicator" width="194">
+</p>
+
 ### Two distinct themes
 
 - **Fancy (default):** Obsidian Arcanum's signature ornate design, with gold detailing, glowing arcane accents, and custom illustrated controls.
 - **Basic:** A minimalist, borderless presentation with straightforward controls and adjustable background opacity.
 
-Both themes provide access to the same core inventory features.
+Both themes provide access to the same core inventory features. Here is the category layout in both styles:
+
+| Fancy theme | Basic theme |
+| :---: | :---: |
+| <img src="images/category-fancy-collapsed.png" alt="Fancy theme: category view with ornate arcane frame" width="400"> | <img src="images/category-basic-collapsed.png" alt="Basic theme: category view with minimalist frame" width="400"> |
 
 ### Required dependency: Syndicator
 
@@ -63,7 +109,7 @@ Retail, Classic, and Classic Era have not been tested and are not currently supp
 
 ### Option 1: CurseForge (recommended)
 
-1. Open the **Obsidian Bags** project page on CurseForge. *Project link coming soon.*
+1. Open the **[Obsidian Bags project page](https://www.curseforge.com/wow/addons/obsidian-bags)** on CurseForge. *A downloadable release will be available once the first build is published.*
 2. Select the release for **World of Warcraft Forever** and install it through the CurseForge app, if your Forever installation is supported.
 3. **Syndicator is required.** The CurseForge app should offer/install it automatically when the Obsidian Bags project is configured with [Syndicator](https://www.curseforge.com/wow/addons/syndicator) as a **Required Dependency**. Confirm both addons are installed and enabled, and choose Forever-compatible versions.
 4. Launch World of Warcraft Forever or reload the UI.
@@ -102,16 +148,6 @@ Open settings by clicking the **cog in the upper-right corner** of the Obsidian 
 - `/obsidianbags`
 
 From the settings interface, customize your layout, categories, themes, and sorting preferences.
-
-## Screenshots
-
-*Final release screenshots will be added after the remaining interface polish.*
-
-- **Fancy theme:** Screenshot coming soon.
-- **Basic theme:** Screenshot coming soon.
-- **Unified inventory:** Screenshot coming soon.
-- **Custom categories:** Screenshot coming soon.
-- **Settings and customization:** Screenshot coming soon.
 
 ## Support and feedback
 
